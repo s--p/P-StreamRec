@@ -820,19 +820,20 @@ async def delete_recording(username: str, filename: str):
     if not (filename.endswith(".ts") or filename.endswith(".mp4")):
         raise HTTPException(status_code=400, detail="Format invalide")
     
-    # Vérifier que ce n'est pas l'enregistrement du jour en cours
-    today = datetime.now().strftime("%Y-%m-%d")
+    # Vérifier que ce n'est pas l'enregistrement en cours
     file_stem = Path(filename).stem
     
-    # Vérifier si une session est active pour cet utilisateur
+    # Vérifier si CE FICHIER SPÉCIFIQUE est en cours d'enregistrement
     active_sessions = manager.list_status()
-    is_recording = any(s.get('person') == username and s.get('running') for s in active_sessions)
-    
-    if is_recording:
-        raise HTTPException(
-            status_code=403, 
-            detail="Impossible de supprimer l'enregistrement en cours."
-        )
+    for session in active_sessions:
+        if session.get('person') == username and session.get('running'):
+            # Récupérer le chemin du fichier en cours d'enregistrement
+            record_path = session.get('record_path', '')
+            if record_path and file_stem in record_path:
+                raise HTTPException(
+                    status_code=403, 
+                    detail="Impossible de supprimer l'enregistrement en cours."
+                )
     
     # Chemins des fichiers
     records_dir = OUTPUT_DIR / "records" / username
