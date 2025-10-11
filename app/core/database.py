@@ -213,7 +213,6 @@ class Database:
         
         # Générer recording_id si non fourni
         if not recording_id:
-            from datetime import datetime
             recording_id = f"{username}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         
         async with aiosqlite.connect(self.db_path) as db:
