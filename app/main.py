@@ -608,7 +608,7 @@ async def get_dashboard():
 
 @app.get("/api/recordings/{username}")
 async def list_recordings(username: str):
-    """Liste les enregistrements depuis le cache SQLite (ultra-rapide)"""
+    """Liste uniquement les enregistrements MP4 convertis"""
     from datetime import datetime
     from .core.utils import format_bytes
     
@@ -619,18 +619,21 @@ async def list_recordings(username: str):
     thumbnails_dir = OUTPUT_DIR / "thumbnails" / username
     
     for rec in recordings_db:
-        filename = rec['filename']
-        file_path = Path(rec['file_path'])
-        
-        # Vérifier que le fichier existe toujours
-        if not file_path.exists():
+        # FILTRER: Ne retourner que les enregistrements convertis avec MP4
+        if not rec.get('is_converted') or not rec.get('mp4_path'):
             continue
         
-        stat = file_path.stat()
+        mp4_path = Path(rec['mp4_path'])
+        
+        # Vérifier que le fichier MP4 existe
+        if not mp4_path.exists():
+            continue
+        
+        stat = mp4_path.stat()
         
         # Miniature
-        thumb_path = thumbnails_dir / f"{file_path.stem}.jpg"
-        thumb_url = f"/api/recording-thumbnail/{username}/{file_path.stem}.jpg"
+        thumb_path = thumbnails_dir / f"{mp4_path.stem}.jpg"
+        thumb_url = f"/api/recording-thumbnail/{username}/{mp4_path.stem}.jpg"
         
         # Formater la durée
         duration_seconds = rec.get('duration_seconds', 0)
@@ -642,32 +645,33 @@ async def list_recordings(username: str):
         else:
             duration_str = f"{minutes}m{seconds:02d}s"
         
-        # Informations MP4 si converti
-        mp4_info = None
-        if rec.get('is_converted') and rec.get('mp4_path'):
-            mp4_path = Path(rec['mp4_path'])
-            if mp4_path.exists():
-                mp4_info = {
-                    "filename": mp4_path.name,
-                    "size": rec.get('mp4_size', 0),
-                    "size_formatted": format_bytes(rec.get('mp4_size', 0)),
-                    "url": f"/streams/records/{username}/{mp4_path.name}"
-                }
+        # Calculer la taille en MB ou GB
+        mp4_size = rec.get('mp4_size', 0)
+        if mp4_size >= 1000 * 1024 * 1024:  # >= 1000 MB
+            size_display = f"{mp4_size / 1024 / 1024 / 1024:.2f} GB"
+        else:
+            size_display = f"{mp4_size / 1024 / 1024:.0f} MB"
         
         recordings.append({
-            "recordingId": rec.get('recording_id', file_path.stem),
-            "filename": filename,
-            "date": file_path.stem,
-            "size": rec['file_size'],
-            "size_formatted": format_bytes(rec['file_size']),
-            "size_mb": round(rec['file_size'] / 1024 / 1024, 2),
+            "recordingId": rec.get('recording_id', mp4_path.stem),
+            "filename": mp4_path.name,
+            "date": mp4_path.stem,
+            "size": mp4_size,
+            "size_formatted": format_bytes(mp4_size),
+            "size_mb": round(mp4_size / 1024 / 1024, 2),
+            "size_display": size_display,
             "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            "url": f"/streams/records/{username}/{filename}",
+            "url": f"/streams/records/{username}/{mp4_path.name}",
             "thumbnail": thumb_url if thumb_path.exists() else None,
             "duration": duration_seconds,
             "duration_str": duration_str,
-            "isConverted": bool(rec.get('is_converted', False)),
-            "mp4": mp4_info
+            "isConverted": True,
+            "mp4": {
+                "filename": mp4_path.name,
+                "size": mp4_size,
+                "size_formatted": format_bytes(mp4_size),
+                "url": f"/streams/records/{username}/{mp4_path.name}"
+            }
         })
     
     return {"recordings": recordings}
@@ -805,41 +809,77 @@ async def delete_model(username: str):
 
 @app.delete("/api/recordings/{username}/{filename}")
 async def delete_recording(username: str, filename: str):
-    """Supprime un enregistrement (sauf celui du jour en cours)"""
+    """Supprime un enregistrement (TS + MP4 + miniature + DB)"""
     from fastapi.responses import Response
     from datetime import datetime
     
     # Sécurité
-    if ".." in filename or "/" in filename or not filename.endswith(".ts"):
+    if ".." in filename or "/" in filename:
         raise HTTPException(status_code=400, detail="Nom invalide")
+    
+    if not (filename.endswith(".ts") or filename.endswith(".mp4")):
+        raise HTTPException(status_code=400, detail="Format invalide")
     
     # Vérifier que ce n'est pas l'enregistrement du jour en cours
     today = datetime.now().strftime("%Y-%m-%d")
-    recording_date = filename.replace(".ts", "")
+    file_stem = Path(filename).stem
     
     # Vérifier si une session est active pour cet utilisateur
     active_sessions = manager.list_status()
     is_recording = any(s.get('person') == username and s.get('running') for s in active_sessions)
     
-    if is_recording and recording_date == today:
+    if is_recording:
         raise HTTPException(
             status_code=403, 
             detail="Impossible de supprimer l'enregistrement en cours."
         )
     
-    ts_path = OUTPUT_DIR / "records" / username / filename
-    thumb_path = OUTPUT_DIR / "thumbnails" / username / f"{Path(filename).stem}.jpg"
+    # Chemins des fichiers
+    records_dir = OUTPUT_DIR / "records" / username
+    ts_path = records_dir / f"{file_stem}.ts"
+    mp4_path = records_dir / f"{file_stem}.mp4"
+    thumb_path = OUTPUT_DIR / "thumbnails" / username / f"{file_stem}.jpg"
     
-    if not ts_path.exists():
+    # Vérifier qu'au moins un fichier existe
+    if not ts_path.exists() and not mp4_path.exists():
         raise HTTPException(status_code=404, detail="Enregistrement introuvable")
     
-    # Supprimer le fichier TS et la miniature
+    # Supprimer tous les fichiers associés
     try:
-        ts_path.unlink()
+        files_deleted = []
+        
+        # Supprimer TS
+        if ts_path.exists():
+            ts_path.unlink()
+            files_deleted.append("TS")
+            logger.info("Fichier TS supprimé", username=username, file=ts_path.name)
+        
+        # Supprimer MP4
+        if mp4_path.exists():
+            mp4_path.unlink()
+            files_deleted.append("MP4")
+            logger.info("Fichier MP4 supprimé", username=username, file=mp4_path.name)
+        
+        # Supprimer miniature
         if thumb_path.exists():
             thumb_path.unlink()
-        return {"success": True, "message": f"{filename} supprimé"}
+            files_deleted.append("Miniature")
+        
+        # Supprimer de la base de données
+        await db.delete_recording(username, f"{file_stem}.ts")
+        logger.info("Enregistrement supprimé de la DB", username=username, filename=filename)
+        
+        return {
+            "success": True, 
+            "message": f"Supprimé: {', '.join(files_deleted)}",
+            "deleted_files": files_deleted
+        }
     except Exception as e:
+        logger.error("Erreur suppression enregistrement", 
+                    username=username, 
+                    filename=filename,
+                    error=str(e),
+                    exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 

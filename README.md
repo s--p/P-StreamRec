@@ -60,11 +60,6 @@ services:
     restart: unless-stopped
 ```
 
-### Portainer
-1. Go to **Stacks** → **Add stack** → **Git Repository**
-2. URL: `https://github.com/raccommode/P-StreamRec` | Branch: `main`
-3. Deploy
-
 **Access:** `http://localhost:8080`
 
 ## 📖 Usage

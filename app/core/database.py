@@ -254,16 +254,27 @@ class Database:
             return [dict(row) for row in rows]
     
     async def get_recordings_count(self, username: str) -> int:
-        """Compte les enregistrements d'un modèle"""
+        """Compte uniquement les enregistrements convertis en MP4"""
         await self.initialize()
         
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
-                "SELECT COUNT(*) FROM recordings WHERE username = ?",
+                "SELECT COUNT(*) FROM recordings WHERE username = ? AND is_converted = 1",
                 (username,)
             )
             row = await cursor.fetchone()
             return row[0] if row else 0
+    
+    async def delete_recording(self, username: str, filename: str):
+        """Supprime un enregistrement de la base de données"""
+        await self.initialize()
+        
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                "DELETE FROM recordings WHERE username = ? AND filename = ?",
+                (username, filename)
+            )
+            await db.commit()
     
     async def migrate_from_json(self, json_path: Path):
         """Migre les données depuis le fichier JSON vers SQLite"""

@@ -212,6 +212,19 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_path: str = 
                             is_converted=True
                         )
                         
+                        # Supprimer le fichier TS original pour économiser l'espace
+                        try:
+                            if ts_path.exists():
+                                ts_path.unlink()
+                                logger.success("🗑️ Fichier TS supprimé après conversion",
+                                             username=username,
+                                             ts_file=rec['filename'],
+                                             mp4_file=mp4_path_result.name)
+                        except Exception as e:
+                            logger.error("Erreur suppression TS", 
+                                       ts_file=rec['filename'],
+                                       error=str(e))
+                        
                         logger.success("📦 Enregistrement converti et indexé",
                                      username=username,
                                      filename=rec['filename'],
