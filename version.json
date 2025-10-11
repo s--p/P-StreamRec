@@ -1,15 +1,15 @@
 {
   "version": "2025.41.C",
   "changelog": [
-    "NEW: Système de notification interne pour les lives",
-    "NEW: Notification visuelle animée quand un modèle lance un live",
-    "NEW: Notifications navigateur système avec miniature du modèle",
-    "NEW: Son de notification personnalisable (activable/désactivable)",
-    "NEW: Panneau de paramètres de notification accessible depuis le header",
-    "NEW: Détection automatique des changements de statut (offline -> online)",
-    "NEW: Notification cliquable pour accéder directement au stream",
-    "NEW: Affichage du nombre de spectateurs dans les notifications",
-    "IMPROVED: Surveillance en temps réel du statut des modèles (15 secondes)",
-    "IMPROVED: Gestion des préférences de notification dans localStorage"
+    "NEW: Internal notification system for live streams",
+    "NEW: Animated visual notification when a model goes live",
+    "NEW: Browser system notifications with model thumbnail",
+    "NEW: Customizable notification sound (enable/disable)",
+    "NEW: Notification settings panel accessible from header",
+    "NEW: Automatic status change detection (offline -> online)",
+    "NEW: Clickable notification to access stream directly",
+    "NEW: Viewer count display in notifications",
+    "IMPROVED: Real-time model status monitoring (15 seconds)",
+    "IMPROVED: Notification preferences management in localStorage"
   ]
 }
