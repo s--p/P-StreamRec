@@ -140,6 +140,28 @@
       border-color: rgba(255, 255, 255, 0.4);
     }
     
+    .settings-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-primary);
+      font-size: 20px;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .settings-btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--accent);
+      transform: scale(1.05);
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+    
     /* Container */
     .container {
       max-width: 1400px;
@@ -402,7 +424,10 @@
       setTimeout(() => {
         const headerRight = document.getElementById('headerRight');
         if (headerRight) {
-          headerRight.innerHTML = '<button class="add-btn" onclick="openAddModal()" title="Add Model">+</button>';
+          headerRight.innerHTML = `
+            <button class="settings-btn" onclick="openSettingsModal()" title="Paramètres de notification" style="margin-right: 0.5rem;">🔔</button>
+            <button class="add-btn" onclick="openAddModal()" title="Add Model">+</button>
+          `;
         }
       }, 100);
     });
@@ -471,6 +496,45 @@
           <button type="submit" class="btn-primary">Add</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Modal Paramètres de Notification -->
+  <div class="modal" id="settingsModal" style="display: none;">
+    <div class="modal-content" style="max-width: 500px;">
+      <h2 class="modal-header">⚙️ Paramètres de notification</h2>
+      
+      <div style="margin-bottom: 1.5rem;">
+        <h3 style="color: var(--text-primary); font-size: 1rem; margin-bottom: 1rem;">Notifications de live</h3>
+        
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          <label style="display: flex; align-items: center; justify-content: space-between; padding: 1rem; background: var(--bg-secondary); border-radius: 10px; cursor: pointer;">
+            <div>
+              <div style="font-weight: 600; color: var(--text-primary);">🔊 Son de notification</div>
+              <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">Jouer un son quand un modèle lance un live</div>
+            </div>
+            <input type="checkbox" id="notificationSound" onchange="toggleNotificationSound()" style="width: 20px; height: 20px; cursor: pointer;" />
+          </label>
+          
+          <label style="display: flex; align-items: center; justify-content: space-between; padding: 1rem; background: var(--bg-secondary); border-radius: 10px; cursor: pointer;">
+            <div>
+              <div style="font-weight: 600; color: var(--text-primary);">💻 Notifications navigateur</div>
+              <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.25rem;">Afficher les notifications système</div>
+            </div>
+            <button id="browserNotifBtn" onclick="requestBrowserNotifications()" style="padding: 0.5rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--accent); color: white; cursor: pointer; font-weight: 600;">Activer</button>
+          </label>
+        </div>
+      </div>
+      
+      <div style="padding: 1rem; background: rgba(99, 102, 241, 0.1); border-radius: 10px; border: 1px solid rgba(99, 102, 241, 0.2);">
+        <div style="font-size: 0.9rem; color: var(--text-secondary);">
+          💡 Les notifications apparaissent automatiquement quand un modèle que vous suivez lance un live.
+        </div>
+      </div>
+      
+      <div style="display: flex; gap: 1rem; margin-top: 1.5rem; justify-content: flex-end;">
+        <button type="button" onclick="closeSettingsModal()" class="btn-primary">Fermer</button>
+      </div>
     </div>
   </div>
 
@@ -600,6 +664,86 @@
       } catch (e) {
         console.error('Error applying update:', e);
         showNotification('Error applying update', 'error');
+      }
+    }
+    
+    // ===== Settings Modal Functions =====
+    function openSettingsModal() {
+      document.getElementById('settingsModal').classList.add('active');
+      document.getElementById('settingsModal').style.display = 'flex';
+      
+      // Update checkbox state
+      const soundEnabled = localStorage.getItem('notification_sound') !== 'false';
+      document.getElementById('notificationSound').checked = soundEnabled;
+      
+      // Update browser notification button
+      updateBrowserNotifButton();
+    }
+    
+    function closeSettingsModal() {
+      document.getElementById('settingsModal').classList.remove('active');
+      document.getElementById('settingsModal').style.display = 'none';
+    }
+    
+    function toggleNotificationSound() {
+      const enabled = document.getElementById('notificationSound').checked;
+      localStorage.setItem('notification_sound', enabled ? 'true' : 'false');
+      
+      if (enabled) {
+        showNotification('Son de notification activé 🔊', 'success');
+      } else {
+        showNotification('Son de notification désactivé 🔇', 'success');
+      }
+    }
+    
+    function requestBrowserNotifications() {
+      if (!('Notification' in window)) {
+        showNotification('Votre navigateur ne supporte pas les notifications', 'error');
+        return;
+      }
+      
+      if (Notification.permission === 'granted') {
+        showNotification('Les notifications navigateur sont déjà activées ✅', 'success');
+        return;
+      }
+      
+      Notification.requestPermission().then(permission => {
+        updateBrowserNotifButton();
+        if (permission === 'granted') {
+          showNotification('Notifications navigateur activées ✅', 'success');
+          // Test notification
+          new Notification('P-StreamRec', {
+            body: 'Les notifications sont maintenant activées !',
+            icon: '/static/screen.png'
+          });
+        } else {
+          showNotification('Permission refusée', 'error');
+        }
+      });
+    }
+    
+    function updateBrowserNotifButton() {
+      const btn = document.getElementById('browserNotifBtn');
+      if (!btn) return;
+      
+      if (!('Notification' in window)) {
+        btn.textContent = 'Non supporté';
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+        return;
+      }
+      
+      if (Notification.permission === 'granted') {
+        btn.textContent = '✅ Activé';
+        btn.style.background = 'var(--success)';
+      } else if (Notification.permission === 'denied') {
+        btn.textContent = '❌ Refusé';
+        btn.style.background = 'var(--danger)';
+        btn.disabled = true;
+        btn.style.opacity = '0.5';
+      } else {
+        btn.textContent = 'Activer';
+        btn.style.background = 'var(--accent)';
       }
     }
   </script>

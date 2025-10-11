@@ -2,6 +2,9 @@
 // Cache for instant performance
 // ============================================
 
+// Store previous model statuses for change detection
+let previousModelStatuses = {};
+
 // Save models cache
 function saveModelsCache(models) {
   localStorage.setItem('models_cache', JSON.stringify({
@@ -252,6 +255,15 @@ async function updateModelsStatus() {
       
       const isRecording = modelInfo.isRecording;
       const isLive = isRecording || modelInfo.isOnline;
+      
+      // Check if model just went live (offline -> online)
+      const previousStatus = previousModelStatuses[modelInfo.username];
+      if (previousStatus !== undefined && !previousStatus && modelInfo.isOnline) {
+        showLiveNotification(modelInfo.username, modelInfo.viewers || 0);
+      }
+      
+      // Update stored status
+      previousModelStatuses[modelInfo.username] = modelInfo.isOnline;
       
       // Update card status
       card.className = `model-card ${isRecording ? 'recording' : modelInfo.isOnline ? 'online' : 'offline'}`;
@@ -526,6 +538,83 @@ function showNotification(message, type = 'success') {
   }, 3000);
 }
 
+// Show live notification with enhanced styling
+function showLiveNotification(username, viewers = 0) {
+  const notif = document.createElement('div');
+  notif.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+    padding: 1.25rem 1.75rem;
+    border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(239, 68, 68, 0.5);
+    z-index: 9999;
+    animation: slideIn 0.3s ease-out, pulse 2s ease-in-out;
+    font-weight: 600;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    cursor: pointer;
+    min-width: 280px;
+  `;
+  
+  notif.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <span style="font-size: 1.5rem; animation: pulse 1.5s infinite;">🔴</span>
+      <div>
+        <div style="font-size: 1rem; margin-bottom: 0.25rem;">${username} est en live !</div>
+        <div style="font-size: 0.85rem; opacity: 0.9;">${viewers > 0 ? `${viewers} spectateurs` : 'Cliquez pour voir'}</div>
+      </div>
+    </div>
+  `;
+  
+  // Click to open model page
+  notif.onclick = () => {
+    window.location.href = `/model.html?username=${username}`;
+  };
+  
+  document.body.appendChild(notif);
+  
+  // Play notification sound if enabled
+  playNotificationSound();
+  
+  // Browser notification if permitted
+  if (Notification.permission === 'granted') {
+    new Notification(`${username} est en live !`, {
+      body: viewers > 0 ? `${viewers} spectateurs en ce moment` : 'Le stream vient de commencer',
+      icon: `/api/thumbnail/${username}`,
+      tag: `live-${username}`,
+      requireInteraction: false
+    });
+  }
+  
+  setTimeout(() => {
+    notif.style.animation = 'slideOut 0.3s ease-out';
+    setTimeout(() => notif.remove(), 300);
+  }, 5000);
+}
+
+// Play notification sound
+function playNotificationSound() {
+  const soundEnabled = localStorage.getItem('notification_sound') !== 'false';
+  if (!soundEnabled) return;
+  
+  try {
+    const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZUQ0PVqzn77BfGQg+ltryxHImBSp+zO/ejUILElyx6OypWBQLR6Hf8sFuIwUuhM/z1YU1Bhxqvu7mnlAODlOq5PC0YhsJPJPY88p4KwUme8ru4pBAChNcsejsqVgVC0ec3/K6ayEEL4TQ89SGNQYaaLzr5p1PDQ1RqOTw'); 
+    audio.volume = 0.3;
+    audio.play().catch(() => {}); // Ignore errors if autoplay blocked
+  } catch (e) {
+    // Silent fail
+  }
+}
+
+// Request notification permission on page load
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
 // ============================================
 // Automatic recording start
 // ============================================
@@ -594,6 +683,9 @@ window.addEventListener('DOMContentLoaded', () => {
     }
   `;
   document.head.appendChild(style);
+  
+  // Request notification permission
+  requestNotificationPermission();
   
   // Display models
   renderModels();

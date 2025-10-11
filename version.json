@@ -1,21 +1,15 @@
 {
-  "version": "2025.41.B",
+  "version": "2025.41.C",
   "changelog": [
-    "NEW: Auto-delete TS files after successful MP4 conversion (saves 50-70% storage)",
-    "NEW: Display only MP4 files in replays (cleaner interface)",
-    "NEW: Theater Mode for video player (fullscreen viewing)",
-    "NEW: Smart volume management (saves and restores your volume preference)",
-    "NEW: Automatic MP4 conversion after stream ends (50-70% smaller)",
-    "NEW: Initial scan of existing TS files at startup",
-    "NEW: Unique recording ID per stream (timestamp + session ID)",
-    "NEW: Size display in MB/GB format (switches at 1000 MB)",
-    "NEW: Keyboard shortcut (ESC) to exit theater mode",
-    "FIX: Delete now removes both TS and MP4 files completely",
-    "FIX: Recording count badge now updates correctly after deletion",
-    "FIX: DateTime import conflict causing DB indexing errors",
-    "IMPROVED: Storage management - only converted recordings visible",
-    "IMPROVED: Delete function removes files from filesystem AND database",
-    "IMPROVED: Recording naming system with timestamps",
-    "IMPROVED: Database schema with MP4 fields"
+    "NEW: Système de notification interne pour les lives",
+    "NEW: Notification visuelle animée quand un modèle lance un live",
+    "NEW: Notifications navigateur système avec miniature du modèle",
+    "NEW: Son de notification personnalisable (activable/désactivable)",
+    "NEW: Panneau de paramètres de notification accessible depuis le header",
+    "NEW: Détection automatique des changements de statut (offline -> online)",
+    "NEW: Notification cliquable pour accéder directement au stream",
+    "NEW: Affichage du nombre de spectateurs dans les notifications",
+    "IMPROVED: Surveillance en temps réel du statut des modèles (15 secondes)",
+    "IMPROVED: Gestion des préférences de notification dans localStorage"
   ]
 }
