@@ -1,6 +1,8 @@
 {
   "version": "2025.42.A",
   "changelog": [
+    "NEW: Watch live streams without recording (view-only mode)",
+    "NEW: API endpoint to get stream URL for online models",
     "FIX: Auto-record checkbox now properly controls automatic recording",
     "FIX: Backend now checks database before starting automatic recordings",
     "FIX: Models with auto-record disabled no longer start recording automatically",

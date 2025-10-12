@@ -524,6 +524,37 @@ async def get_model_status(username: str):
         }
 
 
+@app.get("/api/model/{username}/stream")
+async def get_model_stream(username: str):
+    """Récupère l'URL du stream live pour un modèle (même sans enregistrement)"""
+    try:
+        # Vérifier si le modèle est en ligne
+        model = await db.get_model(username)
+        if not model or not model.get('is_online'):
+            raise HTTPException(status_code=404, detail=f"Modèle {username} n'est pas en ligne")
+        
+        # Résoudre l'URL du stream via Chaturbate
+        if not CB_RESOLVER_ENABLED:
+            raise HTTPException(status_code=400, detail="Chaturbate Resolver désactivé")
+        
+        from .resolvers.chaturbate import resolve_m3u8 as resolve_chaturbate
+        m3u8_url = resolve_chaturbate(username)
+        
+        if not m3u8_url:
+            raise HTTPException(status_code=404, detail=f"Impossible de trouver le flux pour {username}")
+        
+        return {
+            "username": username,
+            "streamUrl": m3u8_url,
+            "isOnline": True
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erreur récupération stream pour {username}", error=str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/thumbnail/{username}")
 async def get_thumbnail(username: str):
     """Sert la miniature depuis le cache (générée par la tâche de monitoring)"""

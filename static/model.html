@@ -715,6 +715,7 @@
     const username = urlParams.get('username');
     let currentSession = null;
     let hlsPlayer = null;
+    let liveStreamLoaded = false; // Track if we loaded a live stream without recording
 
     if (!username) {
       window.location.href = '/';
@@ -853,6 +854,7 @@
         if (session && session.running) {
           const wasRecording = currentSession && currentSession.id === session.id;
           currentSession = session;
+          liveStreamLoaded = false; // Reset since we have a recording session
           
           console.log('📊 Session found:', session);
           console.log('📺 Playback URL:', session.playback_url);
@@ -872,8 +874,29 @@
           currentSession = null;
           document.getElementById('statusDot').className = 'status-dot online';
           document.getElementById('statusText').textContent = 'Online';
+          
+          // Charger le stream live même sans enregistrement (une seule fois)
+          if (!liveStreamLoaded) {
+            console.log('🔴 Model is live, loading stream...');
+            try {
+              const streamRes = await fetch(`/api/model/${username}/stream`);
+              if (streamRes.ok) {
+                const streamData = await streamRes.json();
+                console.log('📺 Stream URL:', streamData.streamUrl);
+                loadStream(streamData.streamUrl);
+                liveStreamLoaded = true; // Mark as loaded
+              } else {
+                console.log('⚠️ Could not load stream:', streamRes.status);
+              }
+            } catch (e) {
+              console.error('❌ Error loading live stream:', e);
+            }
+          } else {
+            console.log('⏭️ Live stream already loaded, skip');
+          }
         } else {
           currentSession = null;
+          liveStreamLoaded = false; // Reset when offline
           document.getElementById('statusDot').className = 'status-dot offline';
           document.getElementById('statusText').textContent = 'Offline';
         }
