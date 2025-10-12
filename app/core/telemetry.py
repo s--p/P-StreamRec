@@ -77,56 +77,48 @@ class Telemetry:
         return 'unknown'
     
     async def send_ping(self) -> bool:
-        """Envoie un ping anonyme - incrémente le compteur CountAPI"""
+        """Log simple au démarrage - pas de télémétrie externe"""
         if not self.enabled:
             return False
         
         instance_id = self.get_instance_id()
-        
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                # Créer/incrémenter le compteur de cette instance
-                # Utilise l'instance_id comme clé unique
-                url = f"https://api.countapi.xyz/set/{COUNTAPI_NAMESPACE}/{instance_id[:16]}?value=1"
-                response = await client.get(url)
-                
-                if response.status_code == 200:
-                    logger.debug(
-                        "Ping télémétrie envoyé",
-                        instance_id=instance_id[:8] + "..."
-                    )
-                    return True
-                else:
-                    logger.warning(
-                        "Ping télémétrie échoué",
-                        status=response.status_code
-                    )
-                    return False
-                    
-        except Exception as e:
-            logger.debug("Impossible d'envoyer le ping télémétrie", error=str(e))
-            return False
+        logger.info(
+            "📊 Instance démarrée",
+            instance_id=instance_id[:8] + "...",
+            version=self.get_version()
+        )
+        return True
     
     async def get_stats(self) -> dict:
-        """Récupère les statistiques publiques depuis CountAPI"""
+        """Récupère les stats depuis GitHub (stars + forks comme proxy de popularité)"""
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                # Récupérer le compteur principal
-                url = f"https://api.countapi.xyz/stats/{COUNTAPI_NAMESPACE}"
-                response = await client.get(url)
+                # Utiliser l'API GitHub pour les stats publiques
+                url = "https://api.github.com/repos/raccommode/P-StreamRec"
+                response = await client.get(
+                    url,
+                    headers={"Accept": "application/vnd.github.v3+json"}
+                )
                 
                 if response.status_code == 200:
                     data = response.json()
-                    # CountAPI retourne le nombre de clés = nombre d'instances
-                    keys_count = data.get('keys_count', 0)
+                    stars = data.get('stargazers_count', 0)
+                    forks = data.get('forks_count', 0)
+                    
+                    # Estimer le nombre d'instances actives basé sur forks/stars
+                    # Hypothèse: ~10% des stars = installations actives
+                    estimated_instances = max(1, int(stars * 0.1))
+                    
                     return {
-                        'active_instances': keys_count,
-                        'namespace': COUNTAPI_NAMESPACE
+                        'active_instances': estimated_instances,
+                        'stars': stars,
+                        'forks': forks,
+                        'source': 'github'
                     }
         except Exception as e:
-            logger.debug("Impossible de récupérer les stats télémétrie", error=str(e))
+            logger.debug("Impossible de récupérer les stats GitHub", error=str(e))
         
-        return {'active_instances': 0}
+        return {'active_instances': 0, 'stars': 0, 'forks': 0, 'source': 'offline'}
     
     async def start_periodic_ping(self):
         """Démarre le ping périodique (tâche en arrière-plan)"""
