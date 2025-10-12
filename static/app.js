@@ -578,16 +578,6 @@ function showLiveNotification(username, viewers = 0) {
   // Play notification sound if enabled
   playNotificationSound();
   
-  // Browser notification if permitted
-  if (Notification.permission === 'granted') {
-    new Notification(`${username} est en live !`, {
-      body: viewers > 0 ? `${viewers} spectateurs en ce moment` : 'Le stream vient de commencer',
-      icon: `/api/thumbnail/${username}`,
-      tag: `live-${username}`,
-      requireInteraction: false
-    });
-  }
-  
   setTimeout(() => {
     notif.style.animation = 'slideOut 0.3s ease-out';
     setTimeout(() => notif.remove(), 300);
@@ -608,11 +598,10 @@ function playNotificationSound() {
   }
 }
 
-// Request notification permission on page load
+// Request notification permission on page load (DISABLED - using internal notifications only)
 function requestNotificationPermission() {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
+  // Internal notifications only - browser notifications disabled
+  return;
 }
 
 // ============================================
@@ -684,8 +673,7 @@ window.addEventListener('DOMContentLoaded', () => {
   `;
   document.head.appendChild(style);
   
-  // Request notification permission
-  requestNotificationPermission();
+  // Internal notifications only (browser notifications disabled)
   
   // Display models
   renderModels();

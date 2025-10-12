@@ -1,5 +1,5 @@
 {
-  "version": "2025.41.D",
+  "version": "2025.42.A",
   "changelog": [
     "NEW: Internal notification system for live streams",
     "NEW: Animated visual notification when a model goes live",
