@@ -158,6 +158,7 @@ class StartBody(BaseModel):
     source_type: Optional[str] = None  # "m3u8" or "chaturbate" or None for auto
     name: Optional[str] = None  # display name
     person: Optional[str] = None  # recording bucket (per person)
+    auto_start: Optional[bool] = False  # True si démarrage automatique
 
 
 def slugify(value: str) -> str:
@@ -385,12 +386,26 @@ async def api_start(body: StartBody):
                 target=body.target, 
                 source_type=body.source_type,
                 person=body.person,
-                name=body.name)
+                name=body.name,
+                auto_start=body.auto_start)
     
     target = (body.target or "").strip()
     if not target:
         logger.error("Champ 'target' vide dans la requête")
         raise HTTPException(status_code=400, detail="Champ 'target' requis")
+    
+    # Si c'est un auto-start, vérifier que auto_record est activé dans la DB
+    if body.auto_start:
+        username = body.person or target
+        model = await db.get_model(username)
+        if model:
+            auto_record = bool(model.get('auto_record', True))
+            if not auto_record:
+                logger.warning("Auto-record désactivé pour ce modèle", username=username)
+                raise HTTPException(status_code=403, detail=f"Auto-record désactivé pour {username}")
+        else:
+            logger.warning("Modèle non trouvé en DB, auto-start refusé", username=username)
+            raise HTTPException(status_code=404, detail=f"Modèle {username} non trouvé")
 
     logger.info("Paramètres validés", target=target, source_type=body.source_type)
 

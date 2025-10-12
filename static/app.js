@@ -636,7 +636,8 @@ async function checkAndStartRecordings() {
               target: username,
               source_type: 'chaturbate',
               person: username,
-              name: username
+              name: username,
+              auto_start: true  // Indiquer que c'est un démarrage automatique
             })
           });
           
@@ -647,6 +648,12 @@ async function checkAndStartRecordings() {
           } else if (res.status === 409) {
             // Session already running, this is normal, skip
             console.log(`⏭️ Session already running for ${username}, skip`);
+          } else if (res.status === 403) {
+            // Auto-record désactivé pour ce modèle
+            console.log(`🚫 Auto-record désactivé pour ${username}`);
+          } else if (res.status === 404) {
+            // Modèle non trouvé en DB
+            console.log(`❓ Modèle ${username} non trouvé en DB`);
           } else {
             const error = await res.json();
             console.error(`❌ Error for ${username}:`, error.detail);
