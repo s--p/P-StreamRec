@@ -13,25 +13,9 @@
     </div>
     <div style="font-size: 0.875rem; opacity: 0.7;">
       <p style="margin: 0.5rem 0;">Made with ❤️ for stream recording</p>
-      <p style="margin: 0.5rem 0; display: flex; align-items: center; justify-content: center; gap: 1rem; flex-wrap: wrap;">
-        <span style="display: inline-flex; align-items: center; gap: 0.25rem;">
-          ⭐ <strong id="githubStars" style="color: var(--primary);">-</strong> stars
-        </span>
-        <span style="display: inline-flex; align-items: center; gap: 0.25rem;">
-          <span style="width: 8px; height: 8px; background: #10b981; border-radius: 50%; display: inline-block; animation: pulse-dot 2s ease-in-out infinite;"></span>
-          ~<strong id="activeInstances" style="color: var(--primary);">-</strong> instances actives
-        </span>
-      </p>
     </div>
   </div>
 </footer>
-
-<style>
-  @keyframes pulse-dot {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-</style>
 
 <script>
   // Load version in footer
@@ -45,33 +29,4 @@
       console.error('Error loading version:', e);
     }
   })();
-
-  // Load telemetry stats (GitHub stars + estimated instances)
-  async function loadTelemetryStats() {
-    try {
-      const res = await fetch('/api/telemetry/stats');
-      const data = await res.json();
-      
-      // Afficher les stars GitHub
-      const githubStars = document.getElementById('githubStars');
-      if (githubStars && data.stars !== undefined) {
-        githubStars.textContent = data.stars;
-      }
-      
-      // Afficher les instances estimées
-      const activeInstances = document.getElementById('activeInstances');
-      if (activeInstances && data.active_instances !== undefined) {
-        activeInstances.textContent = data.active_instances;
-      }
-    } catch (e) {
-      console.debug('Telemetry stats unavailable:', e);
-      // Silently fail - télémétrie optionnelle
-    }
-  }
-
-  // Charger au démarrage
-  loadTelemetryStats();
-  
-  // Recharger toutes les 5 minutes
-  setInterval(loadTelemetryStats, 300000);
 </script>

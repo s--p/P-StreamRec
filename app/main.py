@@ -21,7 +21,6 @@ from .logger import logger
 from .core.database import Database
 from .tasks.monitor import monitor_models_task
 from .tasks.convert import auto_convert_recordings_task
-from .core.telemetry import Telemetry
 
 # Environment
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -130,9 +129,6 @@ manager = FFmpegManager(str(OUTPUT_DIR), ffmpeg_path=FFMPEG_PATH, hls_time=HLS_T
 DB_FILE = OUTPUT_DIR / "streamrec.db"
 db = Database(DB_FILE)
 
-# Télémétrie anonyme
-telemetry = Telemetry(OUTPUT_DIR)
-
 # Fichier de sauvegarde des modèles (côté serveur)
 MODELS_FILE = OUTPUT_DIR / "models.json"
 
@@ -202,13 +198,6 @@ async def get_version():
     else:
         logger.warning(f"Fichier version.json introuvable: {version_file}")
     return {"version": "1.0.0", "releaseDate": "2025-10-05"}
-
-
-@app.get("/api/telemetry/stats")
-async def get_telemetry_stats():
-    """Retourne les statistiques de télémétrie (instances actives)"""
-    stats = await telemetry.get_stats()
-    return stats
 
 
 # ============================================
@@ -1165,12 +1154,9 @@ async def startup_event():
     # Migrer les données depuis le JSON si nécessaire
     await db.migrate_from_json(MODELS_FILE)
     
-    # Démarrer la télémétrie anonyme
-    telemetry.start()
-    
     # Démarrer les tâches de fond
     asyncio.create_task(monitor_models_task(db, manager, FFMPEG_PATH))
     asyncio.create_task(auto_record_task())
     asyncio.create_task(cleanup_old_recordings_task())
     asyncio.create_task(auto_convert_recordings_task(db, OUTPUT_DIR, FFMPEG_PATH))
-    logger.info("🚀 Background tasks démarrés", tasks=["monitor", "auto-record", "cleanup", "convert", "telemetry"])
+    logger.info("🚀 Background tasks démarrés", tasks=["monitor", "auto-record", "cleanup", "convert"])
