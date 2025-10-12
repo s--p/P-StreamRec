@@ -427,7 +427,7 @@
           // Check notification status
           const notifEnabled = localStorage.getItem('notifications_enabled') !== 'false';
           const bellIcon = notifEnabled ? '🔔' : '🔕';
-          const bellTitle = notifEnabled ? 'Désactiver les notifications' : 'Activer les notifications';
+          const bellTitle = notifEnabled ? 'Disable notifications' : 'Enable notifications';
           
           headerRight.innerHTML = `
             <button class="settings-btn" id="notifToggleBtn" onclick="toggleNotifications()" title="${bellTitle}" style="margin-right: 0.5rem;">${bellIcon}</button>
@@ -504,10 +504,10 @@
               checked
               style="width: 20px; height: 20px; cursor: pointer; accent-color: var(--accent);"
             />
-            <span style="color: var(--text-primary); font-weight: 500;">📹 Enregistrement automatique</span>
+            <span style="color: var(--text-primary); font-weight: 500;">📹 Auto Record</span>
           </label>
           <small style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 0.5rem; display: block; margin-left: 2rem;">
-            Démarrer automatiquement l'enregistrement quand le modèle est en ligne
+            Automatically start recording when the model goes online
           </small>
         </div>
         
@@ -660,14 +660,14 @@
       const btn = document.getElementById('notifToggleBtn');
       if (btn) {
         btn.textContent = newState ? '🔔' : '🔕';
-        btn.title = newState ? 'Désactiver les notifications' : 'Activer les notifications';
+        btn.title = newState ? 'Disable notifications' : 'Enable notifications';
       }
       
       // Show feedback
       if (newState) {
-        showNotification('Notifications activées 🔔', 'success');
+        showNotification('Notifications enabled 🔔', 'success');
       } else {
-        showNotification('Notifications désactivées 🔕', 'success');
+        showNotification('Notifications disabled 🔕', 'success');
       }
     }
   </script>

@@ -13,6 +13,7 @@
     "NEW: Status displays 'Live (Watching)' when viewing without recording",
     "NEW: API endpoint to get stream URL for online models",
     "FIX: Removed forced recording when opening model page",
+    "FIX: Translated all notification texts from French to English for consistency",
     "FIX: Auto-record checkbox now properly controls automatic recording",
     "FIX: Backend now checks database before starting automatic recordings",
     "FIX: Models with auto-record disabled no longer start recording automatically",
