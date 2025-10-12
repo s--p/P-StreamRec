@@ -824,6 +824,7 @@
         const res = await fetch(`/api/models/${username}`, { method: 'DELETE' });
         if (res.ok) {
           showNotification('Model deleted', 'success');
+          closeSettingsModal();
           setTimeout(() => window.location.href = '/', 1000);
         }
       } catch (e) {
