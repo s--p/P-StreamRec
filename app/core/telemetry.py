@@ -16,12 +16,10 @@ from ..logger import logger
 
 # Configuration
 TELEMETRY_DISABLED = os.getenv("TELEMETRY_DISABLED", "false").lower() in {"1", "true", "yes"}
-# JSONBin.io - Service gratuit sans inscription (lecture publique)
-TELEMETRY_BIN_URL = os.getenv(
-    "TELEMETRY_BIN_URL",
-    "https://api.jsonbin.io/v3/b/671234567890abcdef123456"  # Bin public partagé
-)
-PING_INTERVAL = int(os.getenv("TELEMETRY_INTERVAL", "86400"))  # 24h par défaut
+# CountAPI.xyz - Service gratuit sans inscription, fait pour compter
+COUNTAPI_NAMESPACE = os.getenv("COUNTAPI_NAMESPACE", "p-streamrec")
+COUNTAPI_KEY = os.getenv("COUNTAPI_KEY", "active-instances")
+PING_INTERVAL = int(os.getenv("TELEMETRY_INTERVAL", "43200"))  # 12h par défaut
 
 
 class Telemetry:
@@ -79,68 +77,29 @@ class Telemetry:
         return 'unknown'
     
     async def send_ping(self) -> bool:
-        """Envoie un ping anonyme - met à jour le bin JSONBin avec cette instance"""
+        """Envoie un ping anonyme - incrémente le compteur CountAPI"""
         if not self.enabled:
             return False
         
         instance_id = self.get_instance_id()
-        version = self.get_version()
-        now = datetime.utcnow().isoformat()
         
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                # 1. Lire le bin actuel
-                response = await client.get(TELEMETRY_BIN_URL)
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Créer/incrémenter le compteur de cette instance
+                # Utilise l'instance_id comme clé unique
+                url = f"https://api.countapi.xyz/set/{COUNTAPI_NAMESPACE}/{instance_id[:16]}?value=1"
+                response = await client.get(url)
                 
                 if response.status_code == 200:
-                    data = response.json()
-                    instances = data.get('record', {}).get('instances', {})
-                else:
-                    instances = {}
-                
-                # 2. Ajouter/mettre à jour cette instance
-                instances[instance_id] = {
-                    "version": version,
-                    "platform": "docker" if os.path.exists("/.dockerenv") else "native",
-                    "last_ping": now
-                }
-                
-                # 3. Nettoyer les instances inactives (>48h)
-                cutoff = datetime.utcnow()
-                active_instances = {}
-                for iid, info in instances.items():
-                    try:
-                        last_ping = datetime.fromisoformat(info['last_ping'])
-                        age_hours = (cutoff - last_ping).total_seconds() / 3600
-                        if age_hours < 48:  # Garder seulement les 48 dernières heures
-                            active_instances[iid] = info
-                    except:
-                        pass
-                
-                # 4. Mettre à jour le bin
-                update_payload = {
-                    "instances": active_instances,
-                    "updated_at": now,
-                    "total_active": len(active_instances)
-                }
-                
-                update_response = await client.put(
-                    TELEMETRY_BIN_URL,
-                    json=update_payload,
-                    headers={"Content-Type": "application/json"}
-                )
-                
-                if update_response.status_code in [200, 201]:
                     logger.debug(
                         "Ping télémétrie envoyé",
-                        instance_id=instance_id[:8] + "...",
-                        total_active=len(active_instances)
+                        instance_id=instance_id[:8] + "..."
                     )
                     return True
                 else:
                     logger.warning(
                         "Ping télémétrie échoué",
-                        status=update_response.status_code
+                        status=response.status_code
                     )
                     return False
                     
@@ -149,23 +108,25 @@ class Telemetry:
             return False
     
     async def get_stats(self) -> dict:
-        """Récupère les statistiques publiques depuis JSONBin"""
+        """Récupère les statistiques publiques depuis CountAPI"""
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(TELEMETRY_BIN_URL)
+                # Récupérer le compteur principal
+                url = f"https://api.countapi.xyz/stats/{COUNTAPI_NAMESPACE}"
+                response = await client.get(url)
                 
                 if response.status_code == 200:
                     data = response.json()
-                    record = data.get('record', {})
+                    # CountAPI retourne le nombre de clés = nombre d'instances
+                    keys_count = data.get('keys_count', 0)
                     return {
-                        'active_instances': record.get('total_active', 0),
-                        'instances': record.get('instances', {}),
-                        'updated_at': record.get('updated_at')
+                        'active_instances': keys_count,
+                        'namespace': COUNTAPI_NAMESPACE
                     }
         except Exception as e:
             logger.debug("Impossible de récupérer les stats télémétrie", error=str(e))
         
-        return {'active_instances': 0, 'instances': {}, 'updated_at': None}
+        return {'active_instances': 0}
     
     async def start_periodic_ping(self):
         """Démarre le ping périodique (tâche en arrière-plan)"""
