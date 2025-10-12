@@ -1495,35 +1495,8 @@
       console.log('🔊 Volume management ready. Saved volume:', savedVolume);
     }
 
-    // Auto-start recording if online
-    async function autoStartRecording() {
-      try {
-        const statusRes = await fetch(`/api/model/${username}/status`);
-        if (!statusRes.ok) return;
-        
-        const modelInfo = await statusRes.json();
-        
-        // If model is online
-        if (modelInfo.isOnline) {
-          // Check if there's already a session
-          const sessionsRes = await fetch('/api/status');
-          const sessions = await sessionsRes.json();
-          const existingSession = sessions.find(s => s.person === username && s.running);
-          
-          // If no session, start automatically
-          if (!existingSession) {
-            console.log(`🎬 Auto-starting recording for ${username}`);
-            await toggleRecording();
-          } else {
-            console.log(`⏭️ Session already running for ${username}, loading stream...`);
-            // Session already exists, just load the stream
-            await updateModelStatus();
-          }
-        }
-      } catch (e) {
-        console.error('Auto-start error:', e);
-      }
-    }
+    // NOTE: Auto-recording is now handled by the backend auto_record.py task
+    // This prevents forcing a recording when user just wants to watch live
 
     // Save progress every 10 seconds
     const video = document.getElementById('player');
@@ -1549,9 +1522,6 @@
     // Initialization
     updateModelStatus();
     loadRecordings();
-    
-    // Auto-start recording after short delay
-    setTimeout(autoStartRecording, 2000);
     
     // Refresh every 10 seconds (less aggressive)
     setInterval(updateModelStatus, 10000);
