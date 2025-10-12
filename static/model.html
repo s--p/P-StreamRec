@@ -873,7 +873,7 @@
         } else if (modelInfo.isOnline) {
           currentSession = null;
           document.getElementById('statusDot').className = 'status-dot online';
-          document.getElementById('statusText').textContent = 'Online';
+          document.getElementById('statusText').textContent = 'Live (Watching)';
           
           // Charger le stream live même sans enregistrement (une seule fois)
           if (!liveStreamLoaded) {
