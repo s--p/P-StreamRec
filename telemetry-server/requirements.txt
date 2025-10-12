@@ -1,0 +1,4 @@
+# Pas de dépendances pour la version simple
+# Pour une version avec base de données, ajouter:
+# redis==5.0.1
+# supabase==2.3.4
