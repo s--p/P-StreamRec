@@ -20,6 +20,9 @@
     "IMPROVED: Simplified notification system (one-click toggle)",
     "IMPROVED: Real-time model status monitoring (15 seconds)",
     "IMPROVED: Silent notifications (no sound)",
+    "IMPROVED: Smart TS to MP4 conversion system - scans all .ts files and converts only those not being recorded",
+    "IMPROVED: Automatic detection of active recording sessions to avoid converting files in use",
+    "IMPROVED: Auto-cleanup of .ts files after successful MP4 conversion to save disk space",
     "REMOVED: Browser system notifications (privacy-focused)",
     "REMOVED: Notification sound system",
     "REMOVED: Settings modal for notifications"

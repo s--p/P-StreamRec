@@ -1204,5 +1204,5 @@ async def startup_event():
     asyncio.create_task(monitor_models_task(db, manager, FFMPEG_PATH))
     asyncio.create_task(auto_record_task())
     asyncio.create_task(cleanup_old_recordings_task())
-    asyncio.create_task(auto_convert_recordings_task(db, OUTPUT_DIR, FFMPEG_PATH))
+    asyncio.create_task(auto_convert_recordings_task(db, OUTPUT_DIR, manager, FFMPEG_PATH))
     logger.info("🚀 Background tasks démarrés", tasks=["monitor", "auto-record", "cleanup", "convert"])
