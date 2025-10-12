@@ -124,7 +124,7 @@ class AppLogger:
     def startup(self):
         """Log de démarrage de l'application"""
         self.logger.info("=" * 80)
-        self.logger.info(f"{Colors.BRIGHT_CYAN}{Colors.BOLD}🎬 P-STREAMREC - Démarrage de l'application{Colors.RESET}")
+        self.logger.info(f"{Colors.BRIGHT_CYAN}{Colors.BOLD}P-STREAMREC - Démarrage de l'application{Colors.RESET}")
         self.logger.info("=" * 80)
     
     def get_logger(self, name: str):
@@ -166,60 +166,60 @@ class AppLogger:
     
     def success(self, message: str, **extra):
         """Log de succès (vert)"""
-        self.logger.info(f"{Colors.BRIGHT_GREEN}✅ {message}{Colors.RESET}", extra={'extra_data': extra} if extra else {})
+        self.logger.info(f"{Colors.BRIGHT_GREEN}{message}{Colors.RESET}", extra={'extra_data': extra} if extra else {})
     
     def failure(self, message: str, **extra):
         """Log d'échec (rouge)"""
-        self.logger.error(f"{Colors.BRIGHT_RED}❌ {message}{Colors.RESET}", extra={'extra_data': extra} if extra else {})
+        self.logger.error(f"{Colors.BRIGHT_RED}{message}{Colors.RESET}", extra={'extra_data': extra} if extra else {})
     
     def progress(self, message: str, **extra):
         """Log de progression"""
-        self.logger.info(f"{Colors.BRIGHT_YELLOW}⏳ {message}{Colors.RESET}", extra={'extra_data': extra} if extra else {})
+        self.logger.info(f"{Colors.BRIGHT_YELLOW}{message}{Colors.RESET}", extra={'extra_data': extra} if extra else {})
     
     def api_request(self, method: str, path: str, **extra):
         """Log d'une requête API"""
-        self.logger.info(f"{Colors.BRIGHT_BLUE}🌐 {method:6} {path}{Colors.RESET}", extra={'extra_data': extra} if extra else {})
+        self.logger.info(f"{Colors.BRIGHT_BLUE}{method:6} {path}{Colors.RESET}", extra={'extra_data': extra} if extra else {})
     
     def api_response(self, status: int, path: str, duration_ms: Optional[float] = None, **extra):
         """Log d'une réponse API"""
         color = Colors.BRIGHT_GREEN if status < 400 else Colors.BRIGHT_RED
         duration_str = f" ({duration_ms:.2f}ms)" if duration_ms else ""
-        self.logger.info(f"{color}📤 [{status}] {path}{duration_str}{Colors.RESET}", extra={'extra_data': extra} if extra else {})
+        self.logger.info(f"{color}[{status}] {path}{duration_str}{Colors.RESET}", extra={'extra_data': extra} if extra else {})
     
     def ffmpeg_start(self, session_id: str, person: str, url: str):
         """Log démarrage FFmpeg"""
-        self.section(f"🎬 DÉMARRAGE ENREGISTREMENT - {person}")
-        self.logger.info(f"🆔 Session ID: {session_id}")
-        self.logger.info(f"👤 Personne: {person}")
-        self.logger.info(f"📺 URL: {url[:80]}...")
+        self.section(f"DÉMARRAGE ENREGISTREMENT - {person}")
+        self.logger.info(f"Session ID: {session_id}")
+        self.logger.info(f"Personne: {person}")
+        self.logger.info(f"URL: {url[:80]}...")
     
     def ffmpeg_stop(self, session_id: str, person: str, duration: Optional[float] = None):
         """Log arrêt FFmpeg"""
         duration_str = f" ({duration:.1f}s)" if duration else ""
-        self.logger.info(f"⏹️  ARRÊT ENREGISTREMENT - {person}{duration_str}")
-        self.logger.info(f"🆔 Session ID: {session_id}")
+        self.logger.info(f"ARRÊT ENREGISTREMENT - {person}{duration_str}")
+        self.logger.info(f"Session ID: {session_id}")
     
     def ffmpeg_error(self, session_id: str, error: str):
         """Log erreur FFmpeg"""
-        self.logger.error(f"❌ ERREUR FFMPEG - Session {session_id}")
+        self.logger.error(f"ERREUR FFMPEG - Session {session_id}")
         self.logger.error(f"   {error}")
     
     def file_operation(self, operation: str, path: str, size: Optional[int] = None, **extra):
         """Log opération fichier"""
         size_str = f" ({size / 1024 / 1024:.2f} MB)" if size else ""
-        self.logger.info(f"📁 {operation}: {path}{size_str}", extra={'extra_data': extra} if extra else {})
+        self.logger.info(f"{operation}: {path}{size_str}", extra={'extra_data': extra} if extra else {})
     
     def git_operation(self, operation: str, **extra):
         """Log opération Git"""
-        self.logger.info(f"🔄 GIT: {operation}", extra={'extra_data': extra} if extra else {})
+        self.logger.info(f"GIT: {operation}", extra={'extra_data': extra} if extra else {})
     
     def background_task(self, task_name: str, action: str, **extra):
         """Log tâche en arrière-plan"""
-        self.logger.info(f"🔧 BACKGROUND [{task_name}]: {action}", extra={'extra_data': extra} if extra else {})
+        self.logger.info(f"BACKGROUND [{task_name}]: {action}", extra={'extra_data': extra} if extra else {})
     
     def model_operation(self, operation: str, username: str, **extra):
         """Log opération sur un modèle"""
-        self.logger.info(f"👤 MODEL [{operation}]: {username}", extra={'extra_data': extra} if extra else {})
+        self.logger.info(f"MODEL [{operation}]: {username}", extra={'extra_data': extra} if extra else {})
 
 
 # Instance globale

@@ -27,7 +27,7 @@ async def convert_ts_to_mp4(
     if mp4_path is None:
         mp4_path = ts_path.with_suffix('.mp4')
     
-    logger.info("🔄 Conversion TS->MP4 démarrée", 
+    logger.info("Conversion TS->MP4 démarrée", 
                ts_file=ts_path.name, 
                mp4_file=mp4_path.name)
     
@@ -68,7 +68,7 @@ async def convert_ts_to_mp4(
             ts_size = ts_path.stat().st_size
             reduction = ((ts_size - mp4_size) / ts_size) * 100
             
-            logger.success("✅ Conversion réussie",
+            logger.success("Conversion réussie",
                          ts_file=ts_path.name,
                          mp4_file=mp4_path.name,
                          ts_size_mb=f"{ts_size / 1024 / 1024:.1f}",
@@ -79,13 +79,13 @@ async def convert_ts_to_mp4(
         else:
             # Erreur de conversion
             error_msg = stderr.decode('utf-8') if stderr else "Unknown error"
-            logger.error("❌ Erreur conversion",
+            logger.error("Erreur conversion FFmpeg",
                         ts_file=ts_path.name,
-                        error=error_msg[:500])  # Limiter la longueur
+                        error=error_msg[:500])
             return False, None, None
             
     except Exception as e:
-        logger.error("❌ Exception conversion",
+        logger.error("Exception conversion",
                     ts_file=ts_path.name,
                     error=str(e),
                     exc_info=True)
@@ -96,10 +96,10 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
     """
     Tâche qui scanne tous les fichiers .ts et les convertit s'ils ne sont pas en cours d'enregistrement
     """
-    logger.info("🔄 Tâche de conversion automatique démarrée")
+    logger.info("Tâche de conversion automatique démarrée", task="auto-convert")
     
     # SCAN INITIAL : Scanner tous les fichiers TS existants au démarrage
-    logger.info("📂 Scan initial des fichiers TS existants...")
+    logger.info("Scan initial des fichiers TS existants", task="auto-convert")
     try:
         records_root = output_dir / "records"
         if records_root.exists():
@@ -113,7 +113,7 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                         
                         if not existing:
                             # Ajouter à la DB
-                            logger.info("📥 Indexation fichier existant", username=username, file=ts_file.name)
+                            logger.info("Indexation fichier existant", username=username, file=ts_file.name)
                             import time
                             recording_id = f"{username}_{ts_file.stem}"
                             await db.add_or_update_recording(
@@ -125,7 +125,7 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                                 duration_seconds=0,
                                 is_converted=False
                             )
-        logger.success("✅ Scan initial terminé")
+        logger.success("Scan initial terminé", task="auto-convert")
     except Exception as e:
         logger.error("Erreur scan initial", error=str(e), exc_info=True)
     
@@ -201,7 +201,7 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                         if ts_path.exists():
                             try:
                                 ts_path.unlink()
-                                logger.success("🗑️ Fichier TS supprimé (MP4 existe déjà)",
+                                logger.success("Fichier TS supprimé (MP4 existe déjà)",
                                              username=username,
                                              ts_file=ts_file.name,
                                              mp4_file=mp4_path.name)
@@ -222,9 +222,10 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                         continue
                     
                     # Le fichier n'est pas en cours d'enregistrement, on peut le convertir
-                    logger.info("🎬 Début conversion automatique",
+                    logger.info("Début conversion automatique",
                               username=username,
-                              filename=ts_file.name)
+                              filename=ts_file.name,
+                              task="auto-convert")
                     
                     success, mp4_path_result, mp4_size = await convert_ts_to_mp4(
                         ts_path,
@@ -256,7 +257,7 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                         try:
                             if ts_path.exists():
                                 ts_path.unlink()
-                                logger.success("🗑️ Fichier TS supprimé après conversion",
+                                logger.success("Fichier TS supprimé après conversion",
                                              username=username,
                                              ts_file=ts_file.name,
                                              mp4_file=mp4_path_result.name)
@@ -265,12 +266,12 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                                        ts_file=ts_file.name,
                                        error=str(e))
                         
-                        logger.success("📦 Enregistrement converti et indexé",
+                        logger.success("Enregistrement converti et indexé",
                                      username=username,
                                      filename=ts_file.name,
                                      mp4_file=mp4_path_result.name)
                     else:
-                        logger.error("❌ Échec conversion", 
+                        logger.error("Échec conversion", 
                                    username=username,
                                    filename=ts_file.name)
                     

@@ -15,7 +15,7 @@ def resolve_m3u8(username: str) -> str:
     Résolveur Chaturbate ultra-simplifié et fiable.
     Utilise l'API puis fallback sur HTML si nécessaire.
     """
-    logger.subsection(f"🔍 Résolution M3U8 - {username}")
+    logger.subsection(f"Résolution M3U8 - {username}")
     
     username = username.strip().lower()
     if not username or not re.match(r'^[a-z0-9_]+$', username):
@@ -61,14 +61,14 @@ def resolve_m3u8(username: str) -> str:
                 if api_data.get(field_name):
                     best_m3u8 = api_data[field_name]
                     quality_source = f"{field_name} ({quality_label})"
-                    logger.success("M3U8 trouvé via API", username=username, source=quality_source, url_preview=best_m3u8[:80])
+                    logger.success("M3U8 trouvé via API", username=username, quality=quality_source)
                     break
             
             if best_m3u8:
                 # ASTUCE: Si c'est un playlist.m3u8, charger et prendre la dernière ligne (meilleure qualité)
                 if 'playlist.m3u8' in best_m3u8:
                     try:
-                        logger.debug("Playlist M3U8 détecté, extraction meilleure qualité", username=username)
+                        logger.debug("Extraction meilleure qualité du playlist", username=username)
                         playlist_resp = requests.get(best_m3u8, headers=headers, timeout=10)
                         if playlist_resp.status_code == 200:
                             lines = playlist_resp.text.strip().split('\n')
@@ -79,15 +79,13 @@ def resolve_m3u8(username: str) -> str:
                                     # C'est un chemin relatif, construire l'URL complète
                                     base_url = best_m3u8.rsplit('/', 1)[0]
                                     best_m3u8 = f"{base_url}/{line}"
-                                    logger.success("Meilleure qualité extraite du playlist", 
-                                                 username=username, 
-                                                 final_url=best_m3u8[:80])
+                                    logger.success("Meilleure qualité extraite du playlist", username=username)
                                     break
                     except Exception as e:
                         logger.warning("Impossible d'extraire meilleure qualité du playlist, utilisation URL brute",
                                      username=username, error=str(e))
                 
-                logger.success("M3U8 résolu via API", username=username, m3u8_url=best_m3u8[:80])
+                logger.success("M3U8 résolu via API", username=username)
                 return best_m3u8
             
             logger.debug("Pas de HLS dans API, fallback sur HTML", username=username)
@@ -133,16 +131,11 @@ def resolve_m3u8(username: str) -> str:
                     pattern_count=len(m3u8_patterns))
         
         for i, pattern in enumerate(m3u8_patterns, 1):
-            logger.debug(f"Test pattern {i}/{len(m3u8_patterns)}", 
-                        username=username,
-                        pattern_preview=pattern[:60])
+            logger.debug("Test pattern regex", username=username, pattern_num=f"{i}/{len(m3u8_patterns)}")
             matches = re.findall(pattern, html_content, re.IGNORECASE)
             
             if matches:
-                logger.debug("Pattern match trouvé", 
-                           username=username,
-                           pattern_index=i,
-                           match_count=len(matches))
+                logger.debug("Pattern match trouvé", username=username, pattern_index=i, matches=len(matches))
                 # Prendre le premier match (ou le groupe capturé)
                 if isinstance(matches[0], tuple):
                     # Si c'est un tuple (groupes capturés), prendre le dernier élément non vide
@@ -164,20 +157,13 @@ def resolve_m3u8(username: str) -> str:
                 # Supprimer les caractères parasites à la fin
                 m3u8_url = m3u8_url.rstrip('",;: \t\n\r')
                 
-                logger.debug("M3U8 candidat trouvé", 
-                           username=username,
-                           url_preview=m3u8_url[:80])
+                logger.debug("M3U8 candidat trouvé", username=username)
                 
                 if m3u8_url.startswith("http") and ".m3u8" in m3u8_url:
-                    logger.success("M3U8 résolu avec succès", 
-                                 username=username,
-                                 m3u8_url=m3u8_url,
-                                 pattern_used=i)
+                    logger.success("M3U8 résolu avec succès", username=username, pattern=i)
                     return m3u8_url
                 else:
-                    logger.debug("URL candidat invalide", 
-                               username=username,
-                               url=m3u8_url)
+                    logger.debug("URL candidat invalide", username=username)
         
         # Si pas trouvé, vérifier si hors ligne
         logger.warning("Aucun M3U8 trouvé, vérification statut", username=username)
@@ -191,12 +177,7 @@ def resolve_m3u8(username: str) -> str:
         hls_count = html_lower.count('hls')
         m3u8_count = html_lower.count('m3u8')
         
-        logger.debug("Analyse HTML", 
-                    username=username,
-                    html_size=len(html_content),
-                    hls_occurrences=hls_count,
-                    m3u8_occurrences=m3u8_count,
-                    html_preview=html_content[:500])
+        logger.debug("Analyse HTML", username=username, size=len(html_content), hls_count=hls_count, m3u8_count=m3u8_count)
         
         logger.error("M3U8 non trouvé", username=username)
         raise ResolveError(f"Impossible de trouver le flux M3U8 pour {username}")

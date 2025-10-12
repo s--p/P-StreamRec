@@ -34,10 +34,10 @@ CB_RESOLVER_ENABLED = os.getenv("CB_RESOLVER_ENABLED", "false").lower() in {"1",
 # Ensure dirs
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-logger.info("📂 Répertoire de sortie", path=str(OUTPUT_DIR))
-logger.info("🎥 FFmpeg path", path=FFMPEG_PATH)
-logger.info("⚙️  HLS Configuration", hls_time=HLS_TIME, hls_list_size=HLS_LIST_SIZE)
-logger.info("🔧 Chaturbate Resolver", enabled=CB_RESOLVER_ENABLED)
+logger.info("Répertoire de sortie", path=str(OUTPUT_DIR))
+logger.info("FFmpeg path", path=FFMPEG_PATH)
+logger.info("HLS Configuration", hls_time=HLS_TIME, hls_list_size=HLS_LIST_SIZE)
+logger.info("Chaturbate Resolver", enabled=CB_RESOLVER_ENABLED)
 
 app = FastAPI(title="P-StreamRec", version="0.1.0")
 
@@ -195,9 +195,9 @@ async def get_version():
             with open(version_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
-            logger.error(f"Erreur lecture version.json: {e}")
+            logger.error("Erreur lecture version.json", error=str(e))
     else:
-        logger.warning(f"Fichier version.json introuvable: {version_file}")
+        logger.warning("Fichier version.json introuvable", path=str(version_file))
     return {"version": "1.0.0", "releaseDate": "2025-10-05"}
 
 
@@ -362,7 +362,7 @@ async def git_update():
 async def restart_application():
     """Redémarre l'application après un délai"""
     await asyncio.sleep(2)
-    logger.info("🔄 Redémarrage application après GitOps update")
+    logger.info("Redémarrage application après GitOps update", task="gitops")
     
     # Si on utilise uvicorn avec --reload, toucher un fichier Python suffit
     try:
@@ -381,7 +381,7 @@ async def model_page():
 @app.post("/api/start")
 async def api_start(body: StartBody):
     start_time = time.time()
-    logger.section("🎯 API /api/start - Démarrage Enregistrement")
+    logger.section("API /api/start - Démarrage Enregistrement")
     logger.debug("Requête reçue", 
                 target=body.target, 
                 source_type=body.source_type,
@@ -462,7 +462,7 @@ async def api_start(body: StartBody):
     person = slugify(person)
     logger.info("Identifiant slugifié", person=person, display_name=body.name)
 
-    logger.subsection("🚀 Démarrage Session FFmpeg")
+    logger.subsection("Démarrage Session FFmpeg")
     try:
         sess = manager.start_session(m3u8_url, person=person, display_name=body.name)
         duration_ms = (time.time() - start_time) * 1000
@@ -551,7 +551,7 @@ async def get_model_stream(username: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Erreur récupération stream pour {username}", error=str(e), exc_info=True)
+        logger.error("Erreur récupération stream", username=username, error=str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -935,7 +935,7 @@ async def recalculate_all_durations():
     """Recalcule les durées de tous les enregistrements"""
     from app.tasks.monitor import get_video_duration, generate_recording_thumbnail
     
-    logger.info("🔄 API: Demande de recalcul des durées")
+    logger.info("API: Demande de recalcul des durées", endpoint="/api/recordings/recalculate-durations")
     
     try:
         # Créer une tâche en arrière-plan
@@ -970,7 +970,7 @@ async def _recalculate_durations_task():
             if not records_dir.exists():
                 continue
             
-            logger.info(f"📁 Recalcul durées: {username}")
+            logger.info("Recalcul durées", username=username, task="recalculate-durations")
             
             ts_files = list(records_dir.glob("*.ts"))
             
@@ -1008,18 +1008,22 @@ async def _recalculate_durations_task():
                             
                             total_updated += 1
                             
-                            logger.success(f"Durée calculée: {ts_file.name} = {duration}s", 
-                                         username=username, 
+                            logger.success("Durée calculée", 
+                                         username=username,
+                                         filename=ts_file.name,
                                          duration=duration)
                         
                 except Exception as e:
-                    logger.error(f"Erreur recalcul: {ts_file.name}", 
-                               username=username, 
+                    logger.error("Erreur recalcul fichier", 
+                               username=username,
+                               filename=ts_file.name,
                                error=str(e))
                     continue
         
-        logger.success(f"✅ Recalcul terminé: {total_updated}/{total_processed} mis à jour",
-                      task="recalculate-durations")
+        logger.success("Recalcul terminé",
+                      task="recalculate-durations",
+                      updated=total_updated,
+                      total=total_processed)
         
     except Exception as e:
         logger.error("Erreur tâche recalcul durées", 
@@ -1080,7 +1084,7 @@ async def auto_record_task():
                             
                             if hls_source:
                                 # Lancer l'enregistrement
-                                logger.background_task("auto-record", f"Modèle en ligne: {username}")
+                                logger.background_task("auto-record", "Modèle en ligne détecté", username=username)
                                 
                                 try:
                                     sess = manager.start_session(
@@ -1205,4 +1209,4 @@ async def startup_event():
     asyncio.create_task(auto_record_task())
     asyncio.create_task(cleanup_old_recordings_task())
     asyncio.create_task(auto_convert_recordings_task(db, OUTPUT_DIR, manager, FFMPEG_PATH))
-    logger.info("🚀 Background tasks démarrés", tasks=["monitor", "auto-record", "cleanup", "convert"])
+    logger.info("Background tasks démarrés", tasks=["monitor", "auto-record", "cleanup", "convert"])
