@@ -612,8 +612,15 @@ async function checkAndStartRecordings() {
   
   for (const model of models) {
     const username = model.username;
+    const autoRecord = model.autoRecord !== false; // Par défaut true si non défini
     const session = sessions.find(s => s.person === username);
     const isRecording = session && session.running;
+    
+    // Vérifier si l'auto-record est activé pour ce modèle
+    if (!autoRecord) {
+      console.log(`⏭️ Auto-record désactivé pour ${username}, skip`);
+      continue;
+    }
     
     if (!isRecording) {
       // Check if model is online

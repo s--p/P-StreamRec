@@ -1,6 +1,8 @@
 {
   "version": "2025.42.A",
   "changelog": [
+    "FIX: Auto-record checkbox now properly controls automatic recording",
+    "FIX: Models with auto-record disabled no longer start recording automatically",
     "NEW: Auto-record option in Add Chaturbate Model form",
     "NEW: Checkbox to enable/disable automatic recording per model",
     "NEW: Internal notification system with popup notifications",
