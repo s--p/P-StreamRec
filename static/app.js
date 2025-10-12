@@ -92,6 +92,7 @@ function openAddModal() {
   document.getElementById('modelUrl').value = '';
   document.getElementById('recordQuality').value = 'best';
   document.getElementById('retentionDays').value = '30';
+  document.getElementById('autoRecord').checked = true;
   document.getElementById('modelUrl').focus();
 }
 
@@ -110,6 +111,7 @@ async function addModel(event) {
   const username = extractUsername(url);
   const quality = document.getElementById('recordQuality').value;
   const retentionDays = parseInt(document.getElementById('retentionDays').value);
+  const autoRecord = document.getElementById('autoRecord').checked;
   
   if (!username) {
     showNotification('URL invalide', 'error');
@@ -128,7 +130,7 @@ async function addModel(event) {
         addedAt: new Date().toISOString(),
         recordQuality: quality,
         retentionDays: retentionDays,
-        autoRecord: true  // Enabled by default
+        autoRecord: autoRecord
       })
     });
     
