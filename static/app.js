@@ -540,6 +540,13 @@ function showNotification(message, type = 'success') {
 
 // Show live notification with enhanced styling
 function showLiveNotification(username, viewers = 0) {
+  // Check if notifications are enabled
+  const notifEnabled = localStorage.getItem('notifications_enabled') !== 'false';
+  if (!notifEnabled) {
+    console.log(`🔕 Notifications disabled, skipping for ${username}`);
+    return;
+  }
+  
   const notif = document.createElement('div');
   notif.style.cssText = `
     position: fixed;
@@ -575,27 +582,16 @@ function showLiveNotification(username, viewers = 0) {
   
   document.body.appendChild(notif);
   
-  // Play notification sound if enabled
-  playNotificationSound();
-  
   setTimeout(() => {
     notif.style.animation = 'slideOut 0.3s ease-out';
     setTimeout(() => notif.remove(), 300);
   }, 5000);
 }
 
-// Play notification sound
+// Play notification sound (DISABLED - no sound on notifications)
 function playNotificationSound() {
-  const soundEnabled = localStorage.getItem('notification_sound') !== 'false';
-  if (!soundEnabled) return;
-  
-  try {
-    const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBTGH0fPTgjMGHm7A7+OZUQ0PVqzn77BfGQg+ltryxHImBSp+zO/ejUILElyx6OypWBQLR6Hf8sFuIwUuhM/z1YU1Bhxqvu7mnlAODlOq5PC0YhsJPJPY88p4KwUme8ru4pBAChNcsejsqVgVC0ec3/K6ayEEL4TQ89SGNQYaaLzr5p1PDQ1RqOTw'); 
-    audio.volume = 0.3;
-    audio.play().catch(() => {}); // Ignore errors if autoplay blocked
-  } catch (e) {
-    // Silent fail
-  }
+  // Notifications without sound
+  return;
 }
 
 // Request notification permission on page load (DISABLED - using internal notifications only)
