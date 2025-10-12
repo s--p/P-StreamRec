@@ -240,13 +240,27 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                         
                         recording_id = existing.get('recording_id') if existing else f"{username}_{ts_file.stem}"
                         
+                        # Recalculer la durée sur le fichier MP4 maintenant qu'il est stable
+                        from .monitor import get_video_duration
+                        final_duration = await get_video_duration(mp4_path_result, ffmpeg_path)
+                        
+                        # Utiliser la durée recalculée ou celle existante si le calcul échoue
+                        if final_duration > 0:
+                            duration_to_use = final_duration
+                            logger.info("Durée recalculée après conversion",
+                                      username=username,
+                                      filename=ts_file.name,
+                                      duration=final_duration)
+                        else:
+                            duration_to_use = existing.get('duration_seconds', 0) if existing else 0
+                        
                         await db.add_or_update_recording(
                             username=username,
                             filename=ts_file.name,
                             file_path=str(ts_path),
                             file_size=ts_path.stat().st_size if ts_path.exists() else 0,
                             recording_id=recording_id,
-                            duration_seconds=existing.get('duration_seconds', 0) if existing else 0,
+                            duration_seconds=duration_to_use,
                             thumbnail_path=existing.get('thumbnail_path') if existing else None,
                             mp4_path=str(mp4_path_result),
                             mp4_size=mp4_size,

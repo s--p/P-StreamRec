@@ -17,6 +17,8 @@
     "FIX: Auto-record checkbox now properly controls automatic recording",
     "FIX: Backend now checks database before starting automatic recordings",
     "FIX: Models with auto-record disabled no longer start recording automatically",
+    "FIX: Recording duration calculation now waits for file stability (120s) before calculating to avoid incomplete files",
+    "FIX: Recording duration is automatically recalculated after MP4 conversion for accurate duration display",
     "IMPROVED: Add model form with better control over auto-recording",
     "IMPROVED: Simplified notification system (one-click toggle)",
     "IMPROVED: Real-time model status monitoring (15 seconds)",
@@ -28,6 +30,8 @@
     "IMPROVED: Suppression des emojis redondants dans les logs (gérés automatiquement par le formatter)",
     "IMPROVED: Standardisation des messages de logs avec paramètres nommés cohérents",
     "IMPROVED: Format de logs structuré et colorisé pour faciliter le débogage",
+    "IMPROVED: recalculate_durations.py script now handles both TS and MP4 files for comprehensive duration recalculation",
+    "IMPROVED: recalculate_durations.py script automatically detects and recalculates suspicious durations under 30 seconds",
     "REMOVED: Browser system notifications (privacy-focused)",
     "REMOVED: Notification sound system",
     "REMOVED: Settings modal for notifications"

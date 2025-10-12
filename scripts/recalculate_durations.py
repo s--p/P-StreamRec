@@ -39,40 +39,63 @@ async def recalculate_all_durations():
         
         logger.info(f"📁 Traitement de {username}...")
         
+        # Traiter les fichiers TS et MP4
         ts_files = list(records_dir.glob("*.ts"))
+        mp4_files = list(records_dir.glob("*.mp4"))
+        all_files = ts_files + mp4_files
         
-        for ts_file in ts_files:
+        for video_file in all_files:
             try:
                 total_processed += 1
                 
                 # Récupérer l'enregistrement depuis la DB
                 recordings = await db.get_recordings(username)
-                existing_rec = next((r for r in recordings if r['filename'] == ts_file.name), None)
+                # Pour les MP4, chercher par nom de fichier sans extension
+                filename_for_lookup = video_file.name if video_file.suffix == '.ts' else video_file.stem + '.ts'
+                existing_rec = next((r for r in recordings if r['filename'] == filename_for_lookup or 
+                                    (r.get('mp4_path') and r['mp4_path'].endswith(video_file.name))), None)
                 
                 current_duration = 0
                 if existing_rec:
                     current_duration = existing_rec.get('duration_seconds', 0)
                 
-                # Calculer la durée si elle est à 0 ou absente
-                if current_duration == 0:
-                    logger.info(f"  ⏱️  Calcul durée: {ts_file.name}...")
-                    duration = await get_video_duration(ts_file, FFMPEG_PATH)
+                # Calculer la durée si elle est à 0 ou absente OU si elle semble anormalement courte
+                # (moins de 30s pourrait indiquer un fichier incomplet au moment du calcul)
+                needs_recalculation = (current_duration == 0 or current_duration < 30)
+                if needs_recalculation:
+                    logger.info(f"  ⏱️  Calcul durée: {video_file.name}...")
+                    duration = await get_video_duration(video_file, FFMPEG_PATH)
                     
                     if duration > 0:
                         # Générer aussi la miniature
                         thumbnail_path = await generate_recording_thumbnail(
-                            ts_file, OUTPUT_DIR, username, FFMPEG_PATH
+                            video_file, OUTPUT_DIR, username, FFMPEG_PATH
                         )
                         
-                        # Mettre à jour dans la DB
-                        await db.add_or_update_recording(
-                            username=username,
-                            filename=ts_file.name,
-                            file_path=str(ts_file),
-                            file_size=ts_file.stat().st_size,
-                            duration_seconds=duration,
-                            thumbnail_path=thumbnail_path
-                        )
+                        # Si c'est un MP4, mettre à jour l'enregistrement existant
+                        if video_file.suffix == '.mp4' and existing_rec:
+                            await db.add_or_update_recording(
+                                username=username,
+                                filename=existing_rec['filename'],
+                                file_path=existing_rec['file_path'],
+                                file_size=existing_rec['file_size'],
+                                recording_id=existing_rec['recording_id'],
+                                duration_seconds=duration,
+                                thumbnail_path=thumbnail_path,
+                                mp4_path=str(video_file),
+                                mp4_size=video_file.stat().st_size,
+                                is_converted=True
+                            )
+                        else:
+                            # Pour les TS, créer ou mettre à jour normalement
+                            await db.add_or_update_recording(
+                                username=username,
+                                filename=video_file.name,
+                                file_path=str(video_file),
+                                file_size=video_file.stat().st_size,
+                                duration_seconds=duration,
+                                thumbnail_path=thumbnail_path
+                            )
                         
                         total_updated += 1
                         
@@ -85,14 +108,14 @@ async def recalculate_all_durations():
                         else:
                             duration_str = f"{minutes}m{seconds:02d}s"
                         
-                        logger.success(f"    ✅ {ts_file.name}: {duration_str}")
+                        logger.success(f"    ✅ {video_file.name}: {duration_str}")
                     else:
-                        logger.warning(f"    ⚠️  Impossible de calculer la durée pour {ts_file.name}")
+                        logger.warning(f"    ⚠️  Impossible de calculer la durée pour {video_file.name}")
                 else:
-                    logger.debug(f"  ⏭️  {ts_file.name} déjà traité ({current_duration}s)")
+                    logger.debug(f"  ⏭️  {video_file.name} déjà traité ({current_duration}s)")
                     
             except Exception as e:
-                logger.error(f"  ❌ Erreur: {ts_file.name}", error=str(e), exc_info=True)
+                logger.error(f"  ❌ Erreur: {video_file.name}", error=str(e), exc_info=True)
                 continue
     
     logger.success(f"✅ Terminé ! {total_updated} enregistrements mis à jour sur {total_processed} traités")

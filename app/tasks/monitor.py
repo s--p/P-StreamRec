@@ -260,6 +260,7 @@ async def generate_recording_thumbnail(
 async def update_recordings_cache(db: 'Database', username: str, output_dir: Path, ffmpeg_path: str = "ffmpeg"):
     """Met à jour le cache des enregistrements dans SQLite"""
     try:
+        import time
         records_dir = output_dir / "records" / username
         
         if not records_dir.exists():
@@ -278,9 +279,20 @@ async def update_recordings_cache(db: 'Database', username: str, output_dir: Pat
                 duration_seconds = existing_rec.get('duration_seconds', 0)
             
             if duration_seconds == 0:
-                # Calculer la durée avec ffprobe
-                duration_seconds = await get_video_duration(ts_file, ffmpeg_path)
-                logger.debug("Durée calculée", username=username, filename=ts_file.name, duration=duration_seconds)
+                # Vérifier que le fichier est stable (pas modifié depuis 120s)
+                # pour éviter de calculer la durée sur un fichier en cours d'écriture
+                last_modified = ts_file.stat().st_mtime
+                seconds_since_modification = time.time() - last_modified
+                
+                if seconds_since_modification >= 120:
+                    # Calculer la durée avec ffprobe
+                    duration_seconds = await get_video_duration(ts_file, ffmpeg_path)
+                    logger.debug("Durée calculée", username=username, filename=ts_file.name, duration=duration_seconds)
+                else:
+                    logger.debug("Fichier pas encore stable, skip calcul durée", 
+                               username=username, 
+                               filename=ts_file.name,
+                               seconds_since_modification=int(seconds_since_modification))
             
             # Générer la miniature si elle n'existe pas
             thumbnail_path = None
