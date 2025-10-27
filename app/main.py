@@ -378,6 +378,11 @@ async def model_page():
     return FileResponse(str(STATIC_DIR / "model.html"))
 
 
+@app.get("/discovery.html")
+async def discovery_page():
+    return FileResponse(str(STATIC_DIR / "discovery.html"))
+
+
 @app.post("/api/start")
 async def api_start(body: StartBody):
     start_time = time.time()
@@ -851,6 +856,44 @@ async def delete_model(username: str):
     } for m in all_models]
     
     return {"success": True, "models": formatted}
+
+
+@app.get("/api/discover/streams")
+async def get_discover_streams(
+    page: int = 1,
+    limit: int = 90,
+    gender: Optional[str] = None,
+    region: Optional[str] = None,
+    tag: Optional[str] = None
+):
+    """Get live Chaturbate streams with filters"""
+    from .resolvers.discover import get_chaturbate_streams
+    
+    try:
+        result = get_chaturbate_streams(
+            page=page,
+            limit=limit,
+            gender=gender,
+            region=region,
+            tag=tag
+        )
+        return result
+    except Exception as e:
+        logger.error("Error fetching streams", error=str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/discover/tags")
+async def get_discover_tags():
+    """Get popular Chaturbate tags"""
+    from .resolvers.discover import get_popular_tags
+    
+    try:
+        tags = get_popular_tags()
+        return {"tags": tags}
+    except Exception as e:
+        logger.error("Error fetching tags", error=str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/api/recordings/{username}/{filename}")

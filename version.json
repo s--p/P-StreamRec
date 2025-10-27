@@ -1,6 +1,14 @@
 {
-  "version": "2025.42.A",
+  "version": "2025.43.A",
   "changelog": [
+    "NEW: Discovery page - Browse all live Chaturbate streams",
+    "NEW: Advanced filters by gender, region, and tags",
+    "NEW: Real-time stream statistics (total streams, viewers)",
+    "NEW: Quick add models directly from Discovery page",
+    "NEW: Pagination support for browsing thousands of streams",
+    "NEW: Search by username in Discovery",
+    "NEW: HD and NEW badges on stream cards",
+    "NEW: Navigation menu in header (My Models / Discovery)",
     "NEW: Auto-record option in Add Chaturbate Model form",
     "NEW: Checkbox to enable/disable automatic recording per model",
     "NEW: Internal notification system with popup notifications",
