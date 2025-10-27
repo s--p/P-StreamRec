@@ -51,48 +51,114 @@ def get_chaturbate_streams(
         
         logger.progress("Fetching page", url=url, page=page)
         
+        # Enhanced headers to bypass 403 Forbidden
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
             "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1"
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Cache-Control": "max-age=0",
+            "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"'
         }
         
-        response = requests.get(url, headers=headers, timeout=15)
+        # Add cookies from environment if available
+        import os
+        cookies = {}
+        if os.getenv("CB_COOKIE"):
+            cookies_str = os.getenv("CB_COOKIE")
+            # Parse cookie string
+            for cookie in cookies_str.split(';'):
+                if '=' in cookie:
+                    key, value = cookie.strip().split('=', 1)
+                    cookies[key] = value
+        
+        # Use session for better cookie handling
+        session = requests.Session()
+        session.headers.update(headers)
+        
+        response = session.get(url, cookies=cookies, timeout=15, allow_redirects=True)
         
         if response.status_code != 200:
             logger.error("HTTP error", status_code=response.status_code)
+            
+            error_msg = f"HTTP {response.status_code}"
+            if response.status_code == 403:
+                error_msg = "Chaturbate blocked the request (403 Forbidden). You need to add a CB_COOKIE environment variable. See DISCOVERY_403_FIX.md for instructions."
+            elif response.status_code == 429:
+                error_msg = "Too many requests (429). Please wait a few minutes."
+            
             return {
                 "streams": [],
                 "count": 0,
                 "page": page,
-                "total_pages": 0
+                "total_pages": 0,
+                "error": error_msg
             }
         
         # Parse HTML
         soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Find all room cards
+        # Find all room cards - try multiple selectors
         room_cards = soup.find_all('li', class_='room_list_room')
         
         if not room_cards:
-            logger.warning("No room cards found, trying alternative selector")
+            logger.warning("No 'li.room_list_room' found, trying alternative selectors")
             room_cards = soup.find_all('div', class_='room_list_room')
         
+        if not room_cards:
+            logger.warning("No 'div.room_list_room' found, trying data-room selector")
+            room_cards = soup.find_all('li', attrs={'data-room': True})
+        
+        if not room_cards:
+            logger.warning("No data-room found, trying any li in room list")
+            room_list = soup.find('ul', class_='list')
+            if room_list:
+                room_cards = room_list.find_all('li')
+        
         logger.debug("Room cards found", count=len(room_cards))
+        
+        # Debug: save HTML snippet to help troubleshoot
+        if len(room_cards) == 0:
+            logger.error("No rooms found at all, dumping HTML structure")
+            # Find main content areas
+            content_divs = soup.find_all('div', class_=re.compile(r'room|content|list'))
+            logger.debug("Found content divs", count=len(content_divs), 
+                        classes=[div.get('class') for div in content_divs[:5]])
         
         streams = []
         
         for card in room_cards[:limit]:
             try:
-                # Extract username
-                username_elem = card.find('a', class_='room_title')
-                if not username_elem:
-                    continue
+                # Extract username - try multiple methods
+                username = None
                 
-                username = username_elem.get('href', '').strip('/').split('/')[-1]
+                # Method 1: data-room attribute
+                username = card.get('data-room')
+                
+                # Method 2: room_title link
                 if not username:
+                    username_elem = card.find('a', class_='room_title')
+                    if username_elem:
+                        username = username_elem.get('href', '').strip('/').split('/')[-1]
+                
+                # Method 3: any link in the card
+                if not username:
+                    any_link = card.find('a', href=True)
+                    if any_link:
+                        href = any_link.get('href', '')
+                        if href and '/' in href:
+                            username = href.strip('/').split('/')[-1]
+                
+                if not username or username in ['', 'tag', 'female-cams', 'male-cams', 'couple-cams', 'trans-cams']:
                     continue
                 
                 # Extract thumbnail

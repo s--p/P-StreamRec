@@ -572,11 +572,37 @@
         
         if (data.error) {
           console.error('API Error:', data.error);
+          
+          // Check if it's a 403 error
+          const is403 = data.error.includes('403') || data.error.includes('Forbidden');
+          const errorTitle = is403 ? '🚫 Access Blocked by Chaturbate' : '⚠️ Error Loading Streams';
+          
+          let errorDetails = `<p style="color: var(--text-secondary); margin: 1rem 0;">${escapeHtml(data.error)}</p>`;
+          
+          if (is403) {
+            errorDetails += `
+              <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0; text-align: left;">
+                <h4 style="color: var(--danger); margin: 0 0 1rem 0; font-size: 1.1rem;">📋 How to Fix:</h4>
+                <ol style="color: var(--text-primary); line-height: 1.8; padding-left: 1.5rem; margin: 0;">
+                  <li>Open Chaturbate in your browser: <a href="https://chaturbate.com" target="_blank" style="color: var(--accent);">chaturbate.com</a></li>
+                  <li>Press <kbd style="background: var(--bg-secondary); padding: 0.25rem 0.5rem; border-radius: 4px; font-family: monospace;">F12</kbd> to open DevTools</li>
+                  <li>Go to <strong>Application</strong> tab → <strong>Cookies</strong></li>
+                  <li>Copy the <code style="background: var(--bg-secondary); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace;">csrftoken</code> value</li>
+                  <li>Add to your environment: <code style="background: var(--bg-secondary); padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; display: block; margin-top: 0.5rem;">CB_COOKIE=csrftoken=YOUR_TOKEN_HERE</code></li>
+                  <li>Restart the server</li>
+                </ol>
+                <p style="margin: 1rem 0 0 0; font-size: 0.9rem; color: var(--text-secondary);">
+                  💡 See <strong>DISCOVERY_403_FIX.md</strong> for detailed instructions
+                </p>
+              </div>
+            `;
+          }
+          
           document.getElementById('emptyState').innerHTML = `
-            <div class="empty-state-icon">⚠️</div>
-            <h3>Error Loading Streams</h3>
-            <p>${data.error}</p>
-            <button onclick="loadStreams()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer;">Retry</button>
+            <div class="empty-state-icon">${is403 ? '🚫' : '⚠️'}</div>
+            <h3>${errorTitle}</h3>
+            ${errorDetails}
+            <button onclick="loadStreams()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600;">🔄 Retry</button>
           `;
           emptyState.style.display = 'block';
           return;

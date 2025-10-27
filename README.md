@@ -29,7 +29,7 @@
 | `HLS_TIME` | `4` | HLS segment duration (seconds) |
 | `HLS_LIST_SIZE` | `6` | Number of segments in playlist |
 | `CB_RESOLVER_ENABLED` | `true` | **Enable Chaturbate support** |
-| `CB_COOKIE` | - | Chaturbate session cookie (optional) |
+| `CB_COOKIE` | - | **Chaturbate session cookie (required for Discovery)** - See DISCOVERY_403_FIX.md |
 | `AUTO_RECORD_USERS` | - | Comma-separated list of users to auto-record |
 | `TZ` | `UTC` | Timezone (e.g., `America/New_York`) |
 
