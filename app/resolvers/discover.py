@@ -1,5 +1,7 @@
 import requests
+import re
 from typing import List, Dict, Optional
+from bs4 import BeautifulSoup
 from ..logger import logger
 
 
@@ -11,7 +13,7 @@ def get_chaturbate_streams(
     tag: Optional[str] = None
 ) -> Dict:
     """
-    Fetch live Chaturbate streams using their public API
+    Fetch live Chaturbate streams using web scraping
     
     Args:
         page: Page number (starting from 1)
@@ -23,46 +25,44 @@ def get_chaturbate_streams(
     Returns:
         Dict with streams list and metadata
     """
-    logger.subsection("Chaturbate Discovery API")
+    logger.subsection("Chaturbate Discovery Scraper")
     
     try:
-        # Build API URL
-        base_url = "https://chaturbate.com/api/public/affiliates/onlinerooms/"
+        # Build URL based on filters
+        base_url = "https://chaturbate.com"
         
-        params = {
-            "wm": "dbsOf",  # Watermark parameter
-            "limit": min(limit, 90),  # Max 90 per request
-            "offset": (page - 1) * limit
-        }
-        
-        # Add filters
+        # Gender mapping
         if gender:
-            # Map short codes to full names
             gender_map = {
-                'f': 'female',
-                'm': 'male', 
-                'c': 'couple',
-                't': 'trans'
+                'f': '/female-cams/',
+                'm': '/male-cams/',
+                'c': '/couple-cams/',
+                't': '/trans-cams/'
             }
-            params['genders'] = gender_map.get(gender, gender)
+            url = base_url + gender_map.get(gender, '/')
+        elif tag:
+            url = f"{base_url}/tag/{tag}/"
+        else:
+            url = base_url + "/"
         
-        if region:
-            params['region'] = region
-            
-        if tag:
-            params['tag'] = tag
+        # Add page parameter if not page 1
+        if page > 1:
+            url += f"?page={page}"
         
-        logger.progress("Fetching streams", params=params)
+        logger.progress("Fetching page", url=url, page=page)
         
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1"
         }
         
-        response = requests.get(base_url, params=params, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=15)
         
         if response.status_code != 200:
-            logger.error("API error", status_code=response.status_code)
+            logger.error("HTTP error", status_code=response.status_code)
             return {
                 "streams": [],
                 "count": 0,
@@ -70,44 +70,111 @@ def get_chaturbate_streams(
                 "total_pages": 0
             }
         
-        data = response.json()
+        # Parse HTML
+        soup = BeautifulSoup(response.text, 'html.parser')
         
-        # Parse results
-        results = data.get('results', [])
+        # Find all room cards
+        room_cards = soup.find_all('li', class_='room_list_room')
+        
+        if not room_cards:
+            logger.warning("No room cards found, trying alternative selector")
+            room_cards = soup.find_all('div', class_='room_list_room')
+        
+        logger.debug("Room cards found", count=len(room_cards))
+        
         streams = []
         
-        for room in results:
+        for card in room_cards[:limit]:
             try:
+                # Extract username
+                username_elem = card.find('a', class_='room_title')
+                if not username_elem:
+                    continue
+                
+                username = username_elem.get('href', '').strip('/').split('/')[-1]
+                if not username:
+                    continue
+                
+                # Extract thumbnail
+                img_elem = card.find('img')
+                thumbnail = img_elem.get('src', '') if img_elem else ''
+                if thumbnail.startswith('//'):
+                    thumbnail = 'https:' + thumbnail
+                
+                # Extract viewers
+                viewers = 0
+                viewers_elem = card.find('li', class_='cams')
+                if viewers_elem:
+                    viewers_text = viewers_elem.get_text(strip=True)
+                    viewers_match = re.search(r'(\d+)', viewers_text)
+                    if viewers_match:
+                        viewers = int(viewers_match.group(1))
+                
+                # Extract gender
+                gender_elem = card.find('div', class_='gender')
+                extracted_gender = ''
+                if gender_elem:
+                    gender_class = gender_elem.get('class', [])
+                    for cls in gender_class:
+                        if 'gender' in cls and cls != 'gender':
+                            extracted_gender = cls.replace('gender', '')
+                
+                # Extract room subject
+                subject_elem = card.find('li', class_='subject')
+                room_subject = subject_elem.get_text(strip=True) if subject_elem else ''
+                
+                # Extract age
+                age_elem = card.find('span', class_='age')
+                age = None
+                if age_elem:
+                    age_text = age_elem.get_text(strip=True)
+                    age_match = re.search(r'(\d+)', age_text)
+                    if age_match:
+                        age = int(age_match.group(1))
+                
+                # Extract location
+                location_elem = card.find('li', class_='location')
+                location = location_elem.get_text(strip=True) if location_elem else ''
+                
+                # Check HD
+                is_hd = card.find('li', class_='hd') is not None
+                
+                # Check NEW
+                is_new = card.find('li', class_='new_') is not None
+                
                 stream = {
-                    "username": room.get('username', ''),
-                    "displayName": room.get('display_name', room.get('username', '')),
-                    "age": room.get('age'),
-                    "gender": room.get('gender', ''),
-                    "location": room.get('location', ''),
-                    "viewers": room.get('num_users', 0),
-                    "thumbnail": room.get('image_url', ''),
-                    "thumbnailUrl": room.get('image_url_360x270', room.get('image_url', '')),
-                    "isHd": room.get('is_hd', False),
-                    "isNew": room.get('is_new', False),
-                    "roomSubject": room.get('room_subject', ''),
-                    "tags": room.get('tags', []),
-                    "chatUrl": f"https://chaturbate.com/{room.get('username', '')}/",
-                    "iframeEmbedUrl": room.get('iframe_embed', ''),
-                    "seconds_online": room.get('seconds_online', 0)
+                    "username": username,
+                    "displayName": username,
+                    "age": age,
+                    "gender": extracted_gender or gender or '',
+                    "location": location,
+                    "viewers": viewers,
+                    "thumbnail": thumbnail,
+                    "thumbnailUrl": thumbnail,
+                    "isHd": is_hd,
+                    "isNew": is_new,
+                    "roomSubject": room_subject,
+                    "tags": [],
+                    "chatUrl": f"https://chaturbate.com/{username}/",
+                    "iframeEmbedUrl": f"https://chaturbate.com/{username}/embed/",
+                    "seconds_online": 0
                 }
                 streams.append(stream)
+                
             except Exception as e:
-                logger.warning("Error parsing room", error=str(e))
+                logger.warning("Error parsing room card", error=str(e))
                 continue
         
-        total_count = data.get('count', len(streams))
-        total_pages = (total_count + limit - 1) // limit
+        # Estimate total pages (Chaturbate typically shows 90 rooms per page)
+        total_count = len(streams) + (page - 1) * limit
+        if len(streams) == limit:
+            total_count += limit  # There's likely more
         
-        logger.success("Streams fetched", 
+        total_pages = max(1, (total_count + limit - 1) // limit)
+        
+        logger.success("Streams scraped", 
                       count=len(streams),
-                      total=total_count,
-                      page=page,
-                      total_pages=total_pages)
+                      page=page)
         
         return {
             "streams": streams,
@@ -116,7 +183,7 @@ def get_chaturbate_streams(
             "page": page,
             "limit": limit,
             "total_pages": total_pages,
-            "has_more": page < total_pages
+            "has_more": len(streams) >= limit
         }
         
     except requests.RequestException as e:

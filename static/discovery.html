@@ -560,12 +560,30 @@
         if (currentFilters.region) params.append('region', currentFilters.region);
         if (currentFilters.tag) params.append('tag', currentFilters.tag);
         
+        console.log('Fetching streams with params:', params.toString());
+        
         const res = await fetch(`/api/discover/streams?${params}`);
+        console.log('Response status:', res.status);
+        
         const data = await res.json();
+        console.log('Response data:', data);
         
         loadingState.style.display = 'none';
         
+        if (data.error) {
+          console.error('API Error:', data.error);
+          document.getElementById('emptyState').innerHTML = `
+            <div class="empty-state-icon">⚠️</div>
+            <h3>Error Loading Streams</h3>
+            <p>${data.error}</p>
+            <button onclick="loadStreams()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer;">Retry</button>
+          `;
+          emptyState.style.display = 'block';
+          return;
+        }
+        
         if (data.streams && data.streams.length > 0) {
+          console.log('Rendering', data.streams.length, 'streams');
           renderStreams(data.streams);
           streamsGrid.style.display = 'grid';
           
@@ -580,11 +598,25 @@
           updatePagination();
           paginationContainer.style.display = 'flex';
         } else {
+          console.warn('No streams found');
+          document.getElementById('emptyState').innerHTML = `
+            <div class="empty-state-icon">🔍</div>
+            <h3>No Streams Found</h3>
+            <p>Try adjusting your filters or check your internet connection</p>
+            <button onclick="loadStreams()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer;">Retry</button>
+          `;
           emptyState.style.display = 'block';
         }
       } catch (e) {
         console.error('Error loading streams:', e);
         loadingState.style.display = 'none';
+        document.getElementById('emptyState').innerHTML = `
+          <div class="empty-state-icon">⚠️</div>
+          <h3>Network Error</h3>
+          <p>${e.message}</p>
+          <p style="font-size: 0.85rem; margin-top: 0.5rem; color: var(--text-secondary);">Make sure the server is running and BeautifulSoup4 is installed</p>
+          <button onclick="loadStreams()" style="margin-top: 1rem; padding: 0.75rem 1.5rem; background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer;">Retry</button>
+        `;
         emptyState.style.display = 'block';
       }
     }
