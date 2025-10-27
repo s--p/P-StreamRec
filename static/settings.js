@@ -14,9 +14,9 @@ window.openSettingsModal = async function() {
     const data = await res.json();
     
     if (data.hasCbCookie) {
-      showCookieStatus('✅ Cookie is configured', 'success');
+      showCookieStatus('✅ Cookie configuré', 'success');
     } else {
-      showCookieStatus('⚠️ No cookie configured - Discovery will not work', 'warning');
+      showCookieStatus('⚠️ Aucun cookie configuré - Discovery ne fonctionnera pas', 'warning');
     }
   } catch (e) {
     console.error('Error loading settings:', e);
@@ -53,7 +53,20 @@ window.saveCbCookie = async function() {
   const cookie = document.getElementById('cbCookieInput').value.trim();
   
   if (!cookie) {
-    showCookieStatus('❌ Please enter a cookie', 'error');
+    showCookieStatus('❌ Veuillez entrer un cookie', 'error');
+    return;
+  }
+  
+  // Validation du format
+  if (!cookie.includes('=')) {
+    showCookieStatus('❌ Format invalide ! Utilisez : csrftoken=VOTRE_VALEUR', 'error');
+    return;
+  }
+  
+  // Vérifier que ça commence bien par un nom de cookie
+  const cookieParts = cookie.split('=');
+  if (cookieParts[0].trim().length === 0 || cookieParts[1].trim().length === 0) {
+    showCookieStatus('❌ Format invalide ! Exemple : csrftoken=7ANxN3HaqQ1MDzCC1RlkqCwG18nK6MAk', 'error');
     return;
   }
   
@@ -65,7 +78,7 @@ window.saveCbCookie = async function() {
     });
     
     if (res.ok) {
-      showCookieStatus('✅ Cookie saved successfully! Reloading page...', 'success');
+      showCookieStatus('✅ Cookie sauvegardé ! Rechargement de la page...', 'success');
       document.getElementById('cbCookieInput').value = '';
       
       // Reload page after 2 seconds
@@ -74,16 +87,16 @@ window.saveCbCookie = async function() {
       }, 2000);
     } else {
       const data = await res.json();
-      showCookieStatus(`❌ Error: ${data.detail || 'Unknown error'}`, 'error');
+      showCookieStatus(`❌ Erreur : ${data.detail || 'Erreur inconnue'}`, 'error');
     }
   } catch (e) {
     console.error('Error saving cookie:', e);
-    showCookieStatus('❌ Network error', 'error');
+    showCookieStatus('❌ Erreur réseau', 'error');
   }
 };
 
 window.deleteCbCookie = async function() {
-  if (!confirm('Delete the Chaturbate cookie? Discovery will stop working.')) {
+  if (!confirm('Supprimer le cookie Chaturbate ? Discovery ne fonctionnera plus.')) {
     return;
   }
   
@@ -93,7 +106,7 @@ window.deleteCbCookie = async function() {
     });
     
     if (res.ok) {
-      showCookieStatus('✅ Cookie deleted', 'success');
+      showCookieStatus('✅ Cookie supprimé', 'success');
       document.getElementById('cbCookieInput').value = '';
       
       // Reload after 2 seconds
@@ -101,11 +114,11 @@ window.deleteCbCookie = async function() {
         window.location.reload();
       }, 2000);
     } else {
-      showCookieStatus('❌ Error deleting cookie', 'error');
+      showCookieStatus('❌ Erreur lors de la suppression', 'error');
     }
   } catch (e) {
     console.error('Error deleting cookie:', e);
-    showCookieStatus('❌ Network error', 'error');
+    showCookieStatus('❌ Erreur réseau', 'error');
   }
 };
 
