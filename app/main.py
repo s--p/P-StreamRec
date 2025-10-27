@@ -858,6 +858,94 @@ async def delete_model(username: str):
     return {"success": True, "models": formatted}
 
 
+# ============================================
+# Settings Endpoints
+# ============================================
+
+SETTINGS_FILE = OUTPUT_DIR / "settings.json"
+
+def load_settings():
+    """Charge les paramètres depuis le fichier JSON"""
+    if SETTINGS_FILE.exists():
+        try:
+            with open(SETTINGS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_settings(settings):
+    """Sauvegarde les paramètres dans le fichier JSON"""
+    try:
+        with open(SETTINGS_FILE, 'w') as f:
+            json.dump(settings, f, indent=2)
+        return True
+    except Exception as e:
+        logger.error("Erreur sauvegarde settings", error=str(e), exc_info=True)
+        return False
+
+
+@app.get("/api/settings")
+async def get_settings():
+    """Récupère les paramètres de l'application"""
+    settings = load_settings()
+    
+    # Ne pas exposer le cookie complet pour la sécurité, juste indiquer s'il existe
+    has_cookie = bool(settings.get('cb_cookie'))
+    
+    return {
+        "hasCbCookie": has_cookie,
+        "cbCookiePreview": settings.get('cb_cookie', '')[:20] + "..." if has_cookie else None
+    }
+
+
+@app.post("/api/settings/cb-cookie")
+async def save_cb_cookie(body: dict):
+    """Sauvegarde le cookie Chaturbate"""
+    cookie = body.get('cookie', '').strip()
+    
+    if not cookie:
+        raise HTTPException(status_code=400, detail="Cookie vide")
+    
+    # Sauvegarder dans le fichier settings
+    settings = load_settings()
+    settings['cb_cookie'] = cookie
+    
+    if not save_settings(settings):
+        raise HTTPException(status_code=500, detail="Erreur de sauvegarde")
+    
+    # Mettre à jour la variable d'environnement pour la session courante
+    os.environ['CB_COOKIE'] = cookie
+    
+    logger.info("Cookie Chaturbate configuré", length=len(cookie))
+    
+    return {
+        "success": True,
+        "message": "Cookie saved successfully"
+    }
+
+
+@app.delete("/api/settings/cb-cookie")
+async def delete_cb_cookie():
+    """Supprime le cookie Chaturbate"""
+    settings = load_settings()
+    
+    if 'cb_cookie' in settings:
+        del settings['cb_cookie']
+        save_settings(settings)
+    
+    # Retirer de l'environnement
+    if 'CB_COOKIE' in os.environ:
+        del os.environ['CB_COOKIE']
+    
+    logger.info("Cookie Chaturbate supprimé")
+    
+    return {
+        "success": True,
+        "message": "Cookie deleted successfully"
+    }
+
+
 @app.get("/api/discover/streams")
 async def get_discover_streams(
     page: int = 1,
@@ -1246,6 +1334,12 @@ async def startup_event():
     
     # Migrer les données depuis le JSON si nécessaire
     await db.migrate_from_json(MODELS_FILE)
+    
+    # Charger le cookie depuis settings.json si disponible
+    settings = load_settings()
+    if settings.get('cb_cookie') and not os.getenv('CB_COOKIE'):
+        os.environ['CB_COOKIE'] = settings['cb_cookie']
+        logger.info("Cookie Chaturbate chargé depuis settings.json")
     
     # Démarrer les tâches de fond
     asyncio.create_task(monitor_models_task(db, manager, FFMPEG_PATH))
