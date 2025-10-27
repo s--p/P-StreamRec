@@ -412,7 +412,6 @@
     }
   </style>
   <script src="/static/loader.js"></script>
-  <script src="/static/settings.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
   <script defer src="/static/app.js"></script>
 </head>
@@ -431,7 +430,6 @@
           const bellTitle = notifEnabled ? 'Disable notifications' : 'Enable notifications';
           
           headerRight.innerHTML = `
-            <button class="settings-btn" onclick="openSettingsModal()" title="Settings" style="margin-right: 0.5rem;">⚙️</button>
             <button class="settings-btn" id="notifToggleBtn" onclick="toggleNotifications()" title="${bellTitle}" style="margin-right: 0.5rem;">${bellIcon}</button>
             <button class="add-btn" onclick="openAddModal()" title="Add Model">+</button>
           `;
