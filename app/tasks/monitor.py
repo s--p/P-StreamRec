@@ -38,9 +38,22 @@ async def check_model_status(session: aiohttp.ClientSession, username: str, csrf
             "Sec-Fetch-Site": "same-origin",
         }
         
-        # Ajouter le cookie si disponible
+        # Ajouter les cookies si disponibles
+        cookies = []
         if csrftoken:
-            headers["Cookie"] = f"csrftoken={csrftoken}"
+            cookies.append(f"csrftoken={csrftoken}")
+        
+        # Récupérer les autres cookies depuis les variables d'environnement
+        affkey = os.getenv("CHATURBATE_AFFKEY")
+        sessionid = os.getenv("CHATURBATE_SESSIONID")
+        
+        if affkey:
+            cookies.append(f"affkey={affkey}")
+        if sessionid:
+            cookies.append(f"sessionid={sessionid}")
+        
+        if cookies:
+            headers["Cookie"] = "; ".join(cookies)
         
         async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15), ssl=False) as response:
             if response.status == 200:
