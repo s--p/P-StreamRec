@@ -5,6 +5,7 @@ Vérifie l'état en ligne, génère les miniatures et met à jour SQLite
 import asyncio
 import aiohttp
 import subprocess
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 from datetime import datetime
@@ -20,7 +21,7 @@ from ..core.config import OUTPUT_DIR
 MONITOR_INTERVAL = 30  # Vérifie toutes les 30 secondes
 THUMBNAIL_UPDATE_INTERVAL = 60  # Miniature mise à jour toutes les 60 secondes
 
-async def check_model_status(session: aiohttp.ClientSession, username: str) -> dict:
+async def check_model_status(session: aiohttp.ClientSession, username: str, csrftoken: str = None) -> dict:
     """Vérifie le statut d'un modèle via l'API Chaturbate"""
     try:
         url = f"https://chaturbate.com/api/chatvideocontext/{username}/"
@@ -36,6 +37,10 @@ async def check_model_status(session: aiohttp.ClientSession, username: str) -> d
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "same-origin",
         }
+        
+        # Ajouter le cookie si disponible
+        if csrftoken:
+            headers["Cookie"] = f"csrftoken={csrftoken}"
         
         async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15), ssl=False) as response:
             if response.status == 200:
@@ -363,6 +368,11 @@ async def monitor_models_task(
     """
     logger.background_task("monitor", "Démarrage du monitoring continu")
     
+    # Récupérer le csrftoken depuis les variables d'environnement
+    csrftoken = os.getenv("CHATURBATE_CSRFTOKEN")
+    if csrftoken:
+        logger.info("CSRF token détecté", has_token=True)
+    
     # Initialiser la base de données
     await db.initialize()
     
@@ -388,7 +398,7 @@ async def monitor_models_task(
                     
                     try:
                         # Vérifier le statut en ligne
-                        status = await check_model_status(session, username)
+                        status = await check_model_status(session, username, csrftoken)
                         
                         # Vérifier si en cours d'enregistrement
                         active_session = next(

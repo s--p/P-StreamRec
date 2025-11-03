@@ -1,8 +1,8 @@
 {
-  "version": "2025.44.F",
+  "version": "2025.44.G",
   "changelog": [
     "FIX: Corrected HLS.js CDN URL to eliminate 404 errors for source map files",
     "FIX: Improved online status detection - models with 'public' or 'away' status are now correctly detected as online",
-    "FIX: Enhanced HTTP headers and disabled SSL verification to bypass Cloudflare protection"
+    "FIX: Added Chaturbate CSRF token support to bypass Cloudflare protection (set CHATURBATE_CSRFTOKEN env var)"
   ]
 }
