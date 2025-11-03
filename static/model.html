@@ -567,6 +567,32 @@
   <div id="header-placeholder"></div>
   
   <script>
+    // Vérifier si l'authentification est activée
+    async function checkAuthStatus() {
+      try {
+        const res = await fetch('/api/version');
+        // Si on peut accéder à l'API, vérifier les cookies
+        return document.cookie.includes('session_token');
+      } catch {
+        return false;
+      }
+    }
+    
+    // Fonction de déconnexion
+    async function logout() {
+      if (!confirm('Voulez-vous vraiment vous déconnecter ?')) {
+        return;
+      }
+      
+      try {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = '/login';
+      } catch (error) {
+        console.error('Erreur de déconnexion:', error);
+        alert('Erreur lors de la déconnexion');
+      }
+    }
+    
     // Customize header for model page
     document.addEventListener('DOMContentLoaded', () => {
       setTimeout(() => {
@@ -591,7 +617,19 @@
         }
         
         if (headerRight) {
-          headerRight.innerHTML = '<button onclick="openSettingsModal()" style="background: rgba(99, 102, 241, 0.1); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 500;">⚙️ Settings</button>';
+          // Vérifier si l'authentification est activée
+          checkAuthStatus().then(isAuthEnabled => {
+            let buttonsHTML = '';
+            
+            // Ajouter le bouton de déconnexion si l'authentification est activée
+            if (isAuthEnabled) {
+              buttonsHTML += '<button onclick="logout()" title="Se déconnecter" style="background: rgba(99, 102, 241, 0.1); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 500; margin-right: 0.5rem;">🚪</button>';
+            }
+            
+            buttonsHTML += '<button onclick="openSettingsModal()" style="background: rgba(99, 102, 241, 0.1); border: 1px solid var(--border); color: var(--text-primary); padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; font-weight: 500;">⚙️ Settings</button>';
+            
+            headerRight.innerHTML = buttonsHTML;
+          });
         }
       }, 100);
     });

@@ -429,13 +429,52 @@
           const bellIcon = notifEnabled ? '🔔' : '🔕';
           const bellTitle = notifEnabled ? 'Disable notifications' : 'Enable notifications';
           
-          headerRight.innerHTML = `
-            <button class="settings-btn" id="notifToggleBtn" onclick="toggleNotifications()" title="${bellTitle}" style="margin-right: 0.5rem;">${bellIcon}</button>
-            <button class="add-btn" onclick="openAddModal()" title="Add Model">+</button>
-          `;
+          // Vérifier si l'authentification est activée
+          checkAuthStatus().then(isAuthEnabled => {
+            let buttonsHTML = `
+              <button class="settings-btn" id="notifToggleBtn" onclick="toggleNotifications()" title="${bellTitle}" style="margin-right: 0.5rem;">${bellIcon}</button>
+            `;
+            
+            // Ajouter le bouton de déconnexion si l'authentification est activée
+            if (isAuthEnabled) {
+              buttonsHTML += `
+                <button class="settings-btn" onclick="logout()" title="Se déconnecter" style="margin-right: 0.5rem;">🚪</button>
+              `;
+            }
+            
+            buttonsHTML += `<button class="add-btn" onclick="openAddModal()" title="Add Model">+</button>`;
+            
+            headerRight.innerHTML = buttonsHTML;
+          });
         }
       }, 100);
     });
+    
+    // Vérifier si l'authentification est activée
+    async function checkAuthStatus() {
+      try {
+        const res = await fetch('/api/version');
+        // Si on peut accéder à l'API, vérifier les cookies
+        return document.cookie.includes('session_token');
+      } catch {
+        return false;
+      }
+    }
+    
+    // Fonction de déconnexion
+    async function logout() {
+      if (!confirm('Voulez-vous vraiment vous déconnecter ?')) {
+        return;
+      }
+      
+      try {
+        await fetch('/api/logout', { method: 'POST' });
+        window.location.href = '/login';
+      } catch (error) {
+        console.error('Erreur de déconnexion:', error);
+        alert('Erreur lors de la déconnexion');
+      }
+    }
   </script>
 
   <div class="container">

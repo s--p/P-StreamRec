@@ -30,6 +30,7 @@
 | `HLS_LIST_SIZE` | `6` | Number of segments in playlist |
 | `CB_RESOLVER_ENABLED` | `true` | **Enable Chaturbate support** |
 | `CB_COOKIE` | - | Chaturbate session cookie (optional) |
+| `PASSWORD` | - | **Password to protect access** (optional) |
 | `AUTO_RECORD_USERS` | - | Comma-separated list of users to auto-record |
 | `TZ` | `UTC` | Timezone (e.g., `America/New_York`) |
 
@@ -61,6 +62,21 @@ services:
 ```
 
 **Access:** `http://localhost:8080`
+
+## 🔐 Password Protection (Optional)
+
+Pour protéger l'accès à l'interface avec un mot de passe, définissez la variable `PASSWORD`:
+
+```yaml
+environment:
+  - PASSWORD=votre_mot_de_passe_securise
+```
+
+**Comportement:**
+- **Sans PASSWORD**: Accès direct à l'interface (comportement par défaut)
+- **Avec PASSWORD**: Redirection vers `/login` pour authentification
+- Les sessions sont conservées pendant 30 jours
+- Bouton de déconnexion 🚪 disponible dans l'interface
 
 ## 📖 Usage
 

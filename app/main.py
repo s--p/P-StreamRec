@@ -10,9 +10,11 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+import secrets
+import hashlib
 
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi import FastAPI, HTTPException, Request, Cookie, Response
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -30,6 +32,7 @@ FFMPEG_PATH = os.getenv("FFMPEG_PATH", "ffmpeg")
 HLS_TIME = int(os.getenv("HLS_TIME", "4"))
 HLS_LIST_SIZE = int(os.getenv("HLS_LIST_SIZE", "6"))
 CB_RESOLVER_ENABLED = os.getenv("CB_RESOLVER_ENABLED", "false").lower() in {"1", "true", "yes"}
+PASSWORD = os.getenv("PASSWORD", "")  # Mot de passe optionnel
 
 # Ensure dirs
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -38,8 +41,56 @@ logger.info("Répertoire de sortie", path=str(OUTPUT_DIR))
 logger.info("FFmpeg path", path=FFMPEG_PATH)
 logger.info("HLS Configuration", hls_time=HLS_TIME, hls_list_size=HLS_LIST_SIZE)
 logger.info("Chaturbate Resolver", enabled=CB_RESOLVER_ENABLED)
+if PASSWORD:
+    logger.info("Authentification activée", protected=True)
+else:
+    logger.info("Authentification désactivée", protected=False)
 
 app = FastAPI(title="P-StreamRec", version="0.1.0")
+
+# Gestionnaire de sessions simples (en mémoire)
+active_sessions = set()
+
+def generate_session_token() -> str:
+    """Génère un token de session sécurisé"""
+    return secrets.token_urlsafe(32)
+
+def verify_password(provided_password: str) -> bool:
+    """Vérifie si le mot de passe fourni correspond"""
+    return provided_password == PASSWORD
+
+def is_authenticated(session_token: Optional[str]) -> bool:
+    """Vérifie si la session est valide"""
+    if not PASSWORD:
+        return True  # Pas d'authentification requise
+    return session_token in active_sessions
+
+# Middleware d'authentification
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    # Routes publiques (pas besoin d'authentification)
+    public_paths = ["/login", "/api/login", "/favicon.ico"]
+    
+    if request.url.path in public_paths:
+        return await call_next(request)
+    
+    # Si pas de mot de passe configuré, laisser passer
+    if not PASSWORD:
+        return await call_next(request)
+    
+    # Vérifier le token de session
+    session_token = request.cookies.get("session_token")
+    
+    if not is_authenticated(session_token):
+        # Rediriger vers la page de login
+        if request.url.path.startswith("/api/"):
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Non authentifié"}
+            )
+        return RedirectResponse(url="/login", status_code=303)
+    
+    return await call_next(request)
 
 # Middleware pour logger toutes les requêtes
 @app.middleware("http")
@@ -171,6 +222,54 @@ def slugify(value: str) -> str:
 @app.get("/")
 async def index():
     return FileResponse(str(STATIC_DIR / "index.html"))
+
+
+@app.get("/login")
+async def login_page():
+    """Page de connexion"""
+    return FileResponse(str(STATIC_DIR / "login.html"))
+
+
+class LoginBody(BaseModel):
+    password: str
+
+
+@app.post("/api/login")
+async def api_login(body: LoginBody, response: Response):
+    """Endpoint de connexion"""
+    if not PASSWORD:
+        raise HTTPException(status_code=400, detail="Authentification non configurée")
+    
+    if not verify_password(body.password):
+        logger.warning("Tentative de connexion échouée")
+        raise HTTPException(status_code=401, detail="Mot de passe incorrect")
+    
+    # Créer une session
+    session_token = generate_session_token()
+    active_sessions.add(session_token)
+    
+    # Définir le cookie de session
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        httponly=True,
+        max_age=86400 * 30,  # 30 jours
+        samesite="lax"
+    )
+    
+    logger.info("Connexion réussie")
+    return {"success": True, "message": "Connecté"}
+
+
+@app.post("/api/logout")
+async def api_logout(response: Response, session_token: Optional[str] = Cookie(None)):
+    """Endpoint de déconnexion"""
+    if session_token and session_token in active_sessions:
+        active_sessions.remove(session_token)
+    
+    response.delete_cookie(key="session_token")
+    logger.info("Déconnexion")
+    return {"success": True, "message": "Déconnecté"}
 
 
 @app.get("/favicon.ico")
