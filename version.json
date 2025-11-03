@@ -1,7 +1,7 @@
 {
-  "version": "2025.44.C",
+  "version": "2025.44.D",
   "changelog": [
     "FIX: Corrected HLS.js CDN URL to eliminate 404 errors for source map files",
-    "FIX: Improved online status detection for models (now includes 'away' status and adds debug logs)"
+    "FIX: Improved online status detection - models with 'public' or 'away' status are now correctly detected as online"
   ]
 }
