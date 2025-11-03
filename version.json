@@ -1,8 +1,8 @@
 {
-  "version": "2025.44.E",
+  "version": "2025.44.F",
   "changelog": [
     "FIX: Corrected HLS.js CDN URL to eliminate 404 errors for source map files",
     "FIX: Improved online status detection - models with 'public' or 'away' status are now correctly detected as online",
-    "FIX: Enhanced HTTP headers to bypass Cloudflare protection and allow API calls from datacenter IPs"
+    "FIX: Enhanced HTTP headers and disabled SSL verification to bypass Cloudflare protection"
   ]
 }

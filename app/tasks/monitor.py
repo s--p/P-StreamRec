@@ -37,7 +37,7 @@ async def check_model_status(session: aiohttp.ClientSession, username: str) -> d
             "Sec-Fetch-Site": "same-origin",
         }
         
-        async with session.get(url, headers=headers, timeout=10) as response:
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15), ssl=False) as response:
             if response.status == 200:
                 data = await response.json()
                 
