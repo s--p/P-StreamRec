@@ -34,9 +34,27 @@ async def check_model_status(session: aiohttp.ClientSession, username: str) -> d
             if response.status == 200:
                 data = await response.json()
                 
-                is_online = bool(data.get("hls_source")) or data.get("room_status") == "public"
-                viewers = data.get("num_users", 0)
+                # Log les données de l'API pour débogage
+                logger.debug("Réponse API Chaturbate", 
+                           username=username,
+                           room_status=data.get("room_status"),
+                           has_hls=bool(data.get("hls_source")),
+                           num_users=data.get("num_users", 0))
+                
+                # Détection améliorée du statut en ligne
+                room_status = data.get("room_status", "")
                 hls_source = data.get("hls_source")
+                
+                # Un modèle est en ligne si :
+                # 1. Il a un flux HLS disponible OU
+                # 2. Le room_status est "public" OU
+                # 3. Le room_status est "away" (temporairement absent mais toujours en ligne)
+                is_online = (
+                    bool(hls_source) or 
+                    room_status in ["public", "away"]
+                )
+                
+                viewers = data.get("num_users", 0)
                 
                 return {
                     "is_online": is_online,
