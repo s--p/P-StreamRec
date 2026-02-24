@@ -49,21 +49,28 @@ async def cleanup_old_recordings_task():
             for model in models:
                 username = model.get('username')
                 retention_days = model.get('retentionDays', 30)  # Défaut 30 jours
-                
+
                 if not username:
                     continue
-                
+
+                # retention_days == 0 means keep forever
+                if retention_days == 0:
+                    logger.debug("Rétention infinie, skip",
+                               task="cleanup",
+                               username=username)
+                    continue
+
                 records_dir = OUTPUT_DIR / "records" / username
                 thumbnails_dir = OUTPUT_DIR / "thumbnails" / username
-                
+
                 if not records_dir.exists():
                     continue
-                
+
                 logger.debug("Nettoyage modèle",
                            task="cleanup",
                            username=username,
                            retention_days=retention_days)
-                
+
                 # Date limite (aujourd'hui - rétention)
                 cutoff_date = datetime.now() - timedelta(days=retention_days)
                 

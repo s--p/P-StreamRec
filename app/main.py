@@ -818,33 +818,37 @@ async def get_dashboard():
 
 @app.get("/api/recordings/{username}")
 async def list_recordings(username: str):
-    """Liste uniquement les enregistrements MP4 convertis"""
+    """Liste les enregistrements (MP4 convertis ou TS bruts)"""
     from datetime import datetime
     from .core.utils import format_bytes
-    
+
     # Récupérer depuis SQLite
     recordings_db = await db.get_recordings(username)
-    
+
     recordings = []
     thumbnails_dir = OUTPUT_DIR / "thumbnails" / username
-    
+
     for rec in recordings_db:
-        # FILTRER: Ne retourner que les enregistrements convertis avec MP4
-        if not rec.get('is_converted') or not rec.get('mp4_path'):
+        # Determine the playable file: prefer MP4, fall back to TS
+        is_converted = bool(rec.get('is_converted'))
+        mp4_raw = rec.get('mp4_path')
+        ts_raw = rec.get('file_path')
+
+        if is_converted and mp4_raw and Path(mp4_raw).exists():
+            serve_path = Path(mp4_raw)
+            file_size = rec.get('mp4_size') or serve_path.stat().st_size
+        elif ts_raw and Path(ts_raw).exists():
+            serve_path = Path(ts_raw)
+            file_size = rec.get('file_size') or serve_path.stat().st_size
+        else:
             continue
-        
-        mp4_path = Path(rec['mp4_path'])
-        
-        # Vérifier que le fichier MP4 existe
-        if not mp4_path.exists():
-            continue
-        
-        stat = mp4_path.stat()
-        
+
+        stat = serve_path.stat()
+
         # Miniature
-        thumb_path = thumbnails_dir / f"{mp4_path.stem}.jpg"
-        thumb_url = f"/api/recording-thumbnail/{username}/{mp4_path.stem}.jpg"
-        
+        thumb_path = thumbnails_dir / f"{serve_path.stem}.jpg"
+        thumb_url = f"/api/recording-thumbnail/{username}/{serve_path.stem}.jpg"
+
         # Formater la durée
         duration_seconds = rec.get('duration_seconds', 0)
         hours = duration_seconds // 3600
@@ -854,36 +858,35 @@ async def list_recordings(username: str):
             duration_str = f"{hours}h{minutes:02d}m"
         else:
             duration_str = f"{minutes}m{seconds:02d}s"
-        
+
         # Calculer la taille en MB ou GB
-        mp4_size = rec.get('mp4_size', 0)
-        if mp4_size >= 1000 * 1024 * 1024:  # >= 1000 MB
-            size_display = f"{mp4_size / 1024 / 1024 / 1024:.2f} GB"
+        if file_size >= 1000 * 1024 * 1024:  # >= 1000 MB
+            size_display = f"{file_size / 1024 / 1024 / 1024:.2f} GB"
         else:
-            size_display = f"{mp4_size / 1024 / 1024:.0f} MB"
-        
+            size_display = f"{file_size / 1024 / 1024:.0f} MB"
+
         recordings.append({
-            "recordingId": rec.get('recording_id', mp4_path.stem),
-            "filename": mp4_path.name,
-            "date": mp4_path.stem,
-            "size": mp4_size,
-            "size_formatted": format_bytes(mp4_size),
-            "size_mb": round(mp4_size / 1024 / 1024, 2),
+            "recordingId": rec.get('recording_id', serve_path.stem),
+            "filename": serve_path.name,
+            "date": serve_path.stem,
+            "size": file_size,
+            "size_formatted": format_bytes(file_size),
+            "size_mb": round(file_size / 1024 / 1024, 2),
             "size_display": size_display,
             "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-            "url": f"/streams/records/{username}/{mp4_path.name}",
+            "url": f"/streams/records/{username}/{serve_path.name}",
             "thumbnail": thumb_url if thumb_path.exists() else None,
             "duration": duration_seconds,
             "duration_str": duration_str,
-            "isConverted": True,
+            "isConverted": is_converted,
             "mp4": {
-                "filename": mp4_path.name,
-                "size": mp4_size,
-                "size_formatted": format_bytes(mp4_size),
-                "url": f"/streams/records/{username}/{mp4_path.name}"
-            }
+                "filename": Path(mp4_raw).name,
+                "size": rec.get('mp4_size', 0),
+                "size_formatted": format_bytes(rec.get('mp4_size', 0)),
+                "url": f"/streams/records/{username}/{Path(mp4_raw).name}"
+            } if is_converted and mp4_raw else None
         })
-    
+
     return {"recordings": recordings}
 
 
@@ -904,13 +907,22 @@ async def get_all_recordings(
 
     recordings = []
     for rec in result["recordings"]:
-        mp4_path = rec.get("mp4_path")
-        if not mp4_path:
+        rec_username = rec.get("username", "")
+        is_converted = bool(rec.get("is_converted"))
+        mp4_raw = rec.get("mp4_path")
+        ts_raw = rec.get("file_path")
+
+        # Determine the playable file: prefer MP4, fall back to TS
+        if is_converted and mp4_raw and Path(mp4_raw).exists():
+            serve_file = Path(mp4_raw)
+            file_size = rec.get("mp4_size") or serve_file.stat().st_size
+        elif ts_raw and Path(ts_raw).exists():
+            serve_file = Path(ts_raw)
+            file_size = rec.get("file_size") or serve_file.stat().st_size
+        else:
             continue
 
-        mp4_file = Path(mp4_path)
-        file_stem = mp4_file.stem
-        rec_username = rec.get("username", "")
+        file_stem = serve_file.stem
 
         # Format duration
         duration_seconds = rec.get("duration_seconds", 0)
@@ -922,22 +934,19 @@ async def get_all_recordings(
         else:
             duration_str = f"{minutes}m{seconds:02d}s"
 
-        # Format size
-        mp4_size = rec.get("mp4_size") or rec.get("file_size", 0)
-
         # Thumbnail
         thumb_path = OUTPUT_DIR / "thumbnails" / rec_username / f"{file_stem}.jpg"
 
         recordings.append({
             "recordingId": rec.get("recording_id", file_stem),
             "username": rec_username,
-            "filename": mp4_file.name,
+            "filename": serve_file.name,
             "date": file_stem,
-            "size": mp4_size,
-            "size_formatted": format_bytes(mp4_size),
+            "size": file_size,
+            "size_formatted": format_bytes(file_size),
             "duration": duration_seconds,
             "duration_str": duration_str,
-            "url": f"/streams/records/{rec_username}/{mp4_file.name}",
+            "url": f"/streams/records/{rec_username}/{serve_file.name}",
             "thumbnail": f"/api/recording-thumbnail/{rec_username}/{file_stem}.jpg" if thumb_path.exists() else None,
             "createdAt": rec.get("created_at"),
         })
@@ -1185,6 +1194,44 @@ async def set_blacklisted_tags(body: dict):
     tags = list(set(t.strip().lower() for t in tags if t.strip()))
     await db.set_blacklisted_tags(tags)
     return {"tags": tags}
+
+
+# ============================================
+# Recording Settings Endpoints
+# ============================================
+
+@app.get("/api/settings/recording")
+async def get_recording_settings():
+    """Get recording settings (auto_convert, keep_ts)"""
+    from .core.config import AUTO_CONVERT, KEEP_TS
+
+    auto_convert_val = await db.get_setting("auto_convert")
+    keep_ts_val = await db.get_setting("keep_ts")
+
+    # Fall back to env var defaults if not set in DB
+    if auto_convert_val is not None:
+        auto_convert = auto_convert_val.lower() in {"1", "true", "yes"}
+    else:
+        auto_convert = AUTO_CONVERT
+
+    if keep_ts_val is not None:
+        keep_ts = keep_ts_val.lower() in {"1", "true", "yes"}
+    else:
+        keep_ts = KEEP_TS
+
+    return {"auto_convert": auto_convert, "keep_ts": keep_ts}
+
+
+@app.put("/api/settings/recording")
+async def update_recording_settings(body: dict):
+    """Update recording settings (auto_convert, keep_ts)"""
+    if "auto_convert" in body:
+        await db.set_setting("auto_convert", str(body["auto_convert"]).lower())
+    if "keep_ts" in body:
+        await db.set_setting("keep_ts", str(body["keep_ts"]).lower())
+
+    # Return current state
+    return await get_recording_settings()
 
 
 # ============================================
@@ -1512,16 +1559,23 @@ async def cleanup_old_recordings_task():
             for model in models:
                 username = model.get('username')
                 retention_days = model.get('retention_days', 30)  # Défaut 30 jours
-                
+
                 if not username:
                     continue
-                
+
+                # retention_days == 0 means keep forever
+                if retention_days == 0:
+                    logger.debug("Rétention infinie, skip",
+                               task="cleanup",
+                               username=username)
+                    continue
+
                 records_dir = OUTPUT_DIR / "records" / username
                 thumbnails_dir = OUTPUT_DIR / "thumbnails" / username
-                
+
                 if not records_dir.exists():
                     continue
-                
+
                 # Date limite (aujourd'hui - rétention)
                 cutoff_date = datetime.now() - timedelta(days=retention_days)
                 

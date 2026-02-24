@@ -122,12 +122,27 @@
             <span class="settings-row-value" id="checkInterval">-</span>
           </div>
           <div class="settings-row">
-            <span class="settings-row-label">Auto Convert</span>
-            <span class="settings-row-value" id="autoConvert">-</span>
+            <div>
+              <span class="settings-row-label">Auto Convert (TS &rarr; MP4)</span>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Automatically convert .TS recordings to .MP4 after capture</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="autoConvertToggle" onchange="updateRecordingSetting('auto_convert', this.checked)" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <div>
+              <span class="settings-row-label">Keep TS Files</span>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Keep original .TS files after MP4 conversion instead of deleting them</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="keepTsToggle" onchange="updateRecordingSetting('keep_ts', this.checked)" />
+              <span class="toggle-slider"></span>
+            </label>
           </div>
           <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-            Recording settings are configured via environment variables or the configuration file.
-            Restart the application after making changes.
+            Changes take effect immediately without restart. Set a model's retention to 0 to keep recordings forever.
           </p>
         </div>
       </div>

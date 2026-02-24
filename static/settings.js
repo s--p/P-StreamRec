@@ -171,13 +171,54 @@ async function loadAppInfo() {
         if (config.output_dir) document.getElementById('outputDir').textContent = config.output_dir;
         if (config.ffmpeg_path) document.getElementById('ffmpegPath').textContent = config.ffmpeg_path;
         if (config.check_interval) document.getElementById('checkInterval').textContent = config.check_interval + 's';
-        if (config.auto_convert !== undefined) document.getElementById('autoConvert').textContent = config.auto_convert ? 'Enabled' : 'Disabled';
       }
     }
   } catch (e) {
     console.error('Error loading app info:', e);
     document.getElementById('apiStatus').className = 'status-indicator disconnected';
     document.getElementById('apiStatus').textContent = 'Disconnected';
+  }
+}
+
+// ============================================
+// Recording Settings (auto_convert, keep_ts)
+// ============================================
+
+async function loadRecordingSettings() {
+  try {
+    var res = await fetch('/api/settings/recording');
+    if (res.ok) {
+      var data = await res.json();
+      var autoConvertToggle = document.getElementById('autoConvertToggle');
+      var keepTsToggle = document.getElementById('keepTsToggle');
+      if (autoConvertToggle) autoConvertToggle.checked = !!data.auto_convert;
+      if (keepTsToggle) keepTsToggle.checked = !!data.keep_ts;
+    }
+  } catch (e) {
+    console.error('Error loading recording settings:', e);
+  }
+}
+
+async function updateRecordingSetting(key, value) {
+  try {
+    var body = {};
+    body[key] = value;
+    var res = await fetch('/api/settings/recording', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (res.ok) {
+      showNotification('Setting updated', 'success');
+    } else {
+      showNotification('Failed to update setting', 'error');
+      // Revert toggle
+      loadRecordingSettings();
+    }
+  } catch (e) {
+    console.error('Error updating recording setting:', e);
+    showNotification('Connection error', 'error');
+    loadRecordingSettings();
   }
 }
 
@@ -306,6 +347,7 @@ window.addEventListener('DOMContentLoaded', function() {
   checkFlareSolverr();
   loadAppInfo();
   loadBlacklistedTags();
+  loadRecordingSettings();
 
   // Set up blacklist input Enter key
   var blacklistInput = document.getElementById('blacklistInput');

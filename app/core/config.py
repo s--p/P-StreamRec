@@ -43,6 +43,10 @@ HOST = os.getenv("HOST", "0.0.0.0")
 AUTO_RECORD_INTERVAL = int(os.getenv("AUTO_RECORD_INTERVAL", "120"))  # secondes
 CLEANUP_INTERVAL = int(os.getenv("CLEANUP_INTERVAL", "3600"))  # secondes
 
+# Recording settings (defaults, overridden by DB settings at runtime)
+AUTO_CONVERT = os.getenv("AUTO_CONVERT", "true").lower() in {"1", "true", "yes"}
+KEEP_TS = os.getenv("KEEP_TS", "false").lower() in {"1", "true", "yes"}
+
 # Timezone
 TZ = os.getenv("TZ", "UTC")
 

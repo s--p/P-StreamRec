@@ -1,14 +1,11 @@
 {
-  "version": "2025.50.A",
+  "version": "2025.51.B",
   "changelog": [
-    "FEAT: FlareSolverr integration for Cloudflare bypass",
-    "FEAT: Chaturbate authentication (login/session management)",
-    "FEAT: Discover page - browse live Chaturbate models",
-    "FEAT: Following page - view followed models with online status",
-    "FEAT: Recordings page - all recordings in one view",
-    "FEAT: Settings page - manage Chaturbate account and FlareSolverr",
-    "FEAT: Navigation bar with Discover/Following/Recordings tabs",
-    "FEAT: Track models directly from Discover and Following pages",
-    "FIX: Improved stream resolution with authenticated edge HLS"
+    "FEAT: Disable automatic TS to MP4 conversion via Settings toggle",
+    "FEAT: Keep original TS files after conversion via Settings toggle",
+    "FEAT: Retention days = 0 now means keep recordings forever",
+    "FEAT: Recordings page shows TS-only recordings when auto-convert is off",
+    "FEAT: Recording settings API (GET/PUT /api/settings/recording)",
+    "FEAT: iOS-style toggle switches in Settings UI"
   ]
 }

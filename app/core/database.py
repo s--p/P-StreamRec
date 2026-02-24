@@ -303,12 +303,12 @@ class Database:
             return [dict(row) for row in rows]
     
     async def get_recordings_count(self, username: str) -> int:
-        """Compte uniquement les enregistrements convertis en MP4"""
+        """Compte les enregistrements (convertis ou non)"""
         await self.initialize()
-        
+
         async with aiosqlite.connect(self.db_path) as db:
             cursor = await db.execute(
-                "SELECT COUNT(*) FROM recordings WHERE username = ? AND is_converted = 1",
+                "SELECT COUNT(*) FROM recordings WHERE username = ?",
                 (username,)
             )
             row = await cursor.fetchone()
@@ -480,7 +480,7 @@ class Database:
             db.row_factory = aiosqlite.Row
 
             # Count total
-            count_sql = "SELECT COUNT(*) FROM recordings WHERE is_converted = 1"
+            count_sql = "SELECT COUNT(*) FROM recordings WHERE 1=1"
             count_params = []
             if username_filter:
                 count_sql += " AND username = ?"
@@ -494,7 +494,7 @@ class Database:
             offset = (page - 1) * limit
             query_sql = """
                 SELECT * FROM recordings
-                WHERE is_converted = 1
+                WHERE 1=1
             """
             query_params = []
             if username_filter:
@@ -507,10 +507,10 @@ class Database:
             rows = await cursor.fetchall()
 
             # Total size
-            size_sql = "SELECT COALESCE(SUM(COALESCE(mp4_size, file_size)), 0) FROM recordings WHERE is_converted = 1"
+            size_sql = "SELECT COALESCE(SUM(COALESCE(mp4_size, file_size)), 0) FROM recordings"
             size_params = []
             if username_filter:
-                size_sql = "SELECT COALESCE(SUM(COALESCE(mp4_size, file_size)), 0) FROM recordings WHERE is_converted = 1 AND username = ?"
+                size_sql = "SELECT COALESCE(SUM(COALESCE(mp4_size, file_size)), 0) FROM recordings WHERE username = ?"
                 size_params.append(username_filter)
 
             cursor = await db.execute(size_sql, size_params)
@@ -643,7 +643,6 @@ class Database:
                     MAX(created_at) as last_recording_at,
                     COALESCE(SUM(duration_seconds), 0) as total_duration
                 FROM recordings
-                WHERE is_converted = 1
                 GROUP BY username
                 ORDER BY last_recording_at DESC
             """)
