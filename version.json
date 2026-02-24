@@ -1,8 +1,14 @@
 {
-  "version": "2025.44.H",
+  "version": "2025.50.A",
   "changelog": [
-    "FIX: Corrected HLS.js CDN URL to eliminate 404 errors for source map files",
-    "FIX: Improved online status detection - models with 'public' or 'away' status are now correctly detected as online",
-    "FIX: Added full Chaturbate cookie support (CHATURBATE_CSRFTOKEN, CHATURBATE_AFFKEY, CHATURBATE_SESSIONID) to bypass Cloudflare"
+    "FEAT: FlareSolverr integration for Cloudflare bypass",
+    "FEAT: Chaturbate authentication (login/session management)",
+    "FEAT: Discover page - browse live Chaturbate models",
+    "FEAT: Following page - view followed models with online status",
+    "FEAT: Recordings page - all recordings in one view",
+    "FEAT: Settings page - manage Chaturbate account and FlareSolverr",
+    "FEAT: Navigation bar with Discover/Following/Recordings tabs",
+    "FEAT: Track models directly from Discover and Following pages",
+    "FIX: Improved stream resolution with authenticated edge HLS"
   ]
 }

@@ -23,6 +23,12 @@ from .logger import logger
 from .core.database import Database
 from .tasks.monitor import monitor_models_task
 from .tasks.convert import auto_convert_recordings_task
+from .services.flaresolverr import FlareSolverrClient
+from .services.chaturbate_auth import ChaturbateAuthService
+from .services.chaturbate_api import ChaturbateAPI
+from .api import auth as auth_router
+from .api import discover as discover_router
+from .api import following as following_router
 
 # Environment
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -33,6 +39,9 @@ HLS_TIME = int(os.getenv("HLS_TIME", "4"))
 HLS_LIST_SIZE = int(os.getenv("HLS_LIST_SIZE", "6"))
 CB_RESOLVER_ENABLED = os.getenv("CB_RESOLVER_ENABLED", "false").lower() in {"1", "true", "yes"}
 PASSWORD = os.getenv("PASSWORD", "")  # Mot de passe optionnel
+CHATURBATE_USERNAME = os.getenv("CHATURBATE_USERNAME", "")
+CHATURBATE_PASSWORD = os.getenv("CHATURBATE_PASSWORD", "")
+FLARESOLVERR_URL = os.getenv("FLARESOLVERR_URL", "http://flaresolverr:8191")
 
 # Ensure dirs
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -70,8 +79,11 @@ def is_authenticated(session_token: Optional[str]) -> bool:
 async def auth_middleware(request: Request, call_next):
     # Routes publiques (pas besoin d'authentification)
     public_paths = ["/login", "/api/login", "/favicon.ico"]
-    
-    if request.url.path in public_paths:
+    public_prefixes = ["/static/", "/api/chaturbate/status"]
+
+    if request.url.path in public_paths or any(
+        request.url.path.startswith(p) for p in public_prefixes
+    ):
         return await call_next(request)
     
     # Si pas de mot de passe configuré, laisser passer
@@ -117,6 +129,11 @@ app.add_middleware(
     allow_methods=["*"],  # Autoriser toutes les méthodes (GET, POST, etc.)
     allow_headers=["*"],  # Autoriser tous les headers
 )
+
+# Register API routers
+app.include_router(auth_router.router)
+app.include_router(discover_router.router)
+app.include_router(following_router.router)
 
 # Static mounts
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -180,6 +197,9 @@ manager = FFmpegManager(str(OUTPUT_DIR), ffmpeg_path=FFMPEG_PATH, hls_time=HLS_T
 DB_FILE = OUTPUT_DIR / "streamrec.db"
 db = Database(DB_FILE)
 
+# Chaturbate API (initialized at startup)
+chaturbate_api: Optional[ChaturbateAPI] = None
+
 # Fichier de sauvegarde des modèles (côté serveur)
 MODELS_FILE = OUTPUT_DIR / "models.json"
 
@@ -221,6 +241,43 @@ def slugify(value: str) -> str:
 
 @app.get("/")
 async def index():
+    """Root now serves Discover page"""
+    return FileResponse(str(STATIC_DIR / "discover.html"))
+
+
+@app.get("/discover")
+async def discover_page():
+    """Discover page - browse live models"""
+    return FileResponse(str(STATIC_DIR / "discover.html"))
+
+
+@app.get("/following")
+async def following_page():
+    """Following page - tracked models from Chaturbate"""
+    return FileResponse(str(STATIC_DIR / "following.html"))
+
+
+@app.get("/recordings")
+async def recordings_page():
+    """Recordings page - all recordings across models"""
+    return FileResponse(str(STATIC_DIR / "recordings.html"))
+
+
+@app.get("/settings")
+async def settings_page():
+    """Settings page"""
+    return FileResponse(str(STATIC_DIR / "settings.html"))
+
+
+@app.get("/watch/{username}")
+async def watch_page(username: str):
+    """Watch page - view live stream or recording for a model"""
+    return FileResponse(str(STATIC_DIR / "watch.html"))
+
+
+@app.get("/dashboard")
+async def dashboard_page():
+    """Legacy dashboard (old index.html)"""
     return FileResponse(str(STATIC_DIR / "index.html"))
 
 
@@ -527,8 +584,12 @@ async def api_start(body: StartBody):
                 raise HTTPException(status_code=400, detail="Résolution Chaturbate désactivée. Fournissez une URL m3u8 directe ou activez CB_RESOLVER_ENABLED.")
             try:
                 logger.progress("Appel Chaturbate Resolver", username=target)
-                from .resolvers.chaturbate import resolve_m3u8 as resolve_chaturbate
-                m3u8_url = resolve_chaturbate(target)
+                from .resolvers.chaturbate import resolve_m3u8_async, resolve_m3u8 as resolve_chaturbate
+                # Try async resolver first (authenticated)
+                try:
+                    m3u8_url = await resolve_m3u8_async(target)
+                except Exception:
+                    m3u8_url = resolve_chaturbate(target)
                 if not m3u8_url:
                     logger.error("Resolver retourné None", username=target)
                     raise HTTPException(status_code=400, detail=f"Impossible de trouver le flux pour {target}")
@@ -635,9 +696,13 @@ async def get_model_stream(username: str):
         # Résoudre l'URL du stream via Chaturbate
         if not CB_RESOLVER_ENABLED:
             raise HTTPException(status_code=400, detail="Chaturbate Resolver désactivé")
-        
-        from .resolvers.chaturbate import resolve_m3u8 as resolve_chaturbate
-        m3u8_url = resolve_chaturbate(username)
+
+        from .resolvers.chaturbate import resolve_m3u8_async
+        try:
+            m3u8_url = await resolve_m3u8_async(username)
+        except Exception:
+            from .resolvers.chaturbate import resolve_m3u8 as resolve_chaturbate
+            m3u8_url = resolve_chaturbate(username)
         
         if not m3u8_url:
             raise HTTPException(status_code=404, detail=f"Impossible de trouver le flux pour {username}")
@@ -820,6 +885,76 @@ async def list_recordings(username: str):
         })
     
     return {"recordings": recordings}
+
+
+@app.get("/api/all-recordings")
+async def get_all_recordings(
+    page: int = 1,
+    limit: int = 20,
+    username: str = None
+):
+    """Get all recordings across all models with pagination"""
+    from .core.utils import format_bytes
+
+    result = await db.get_all_recordings_paginated(
+        page=page,
+        limit=limit,
+        username_filter=username
+    )
+
+    recordings = []
+    for rec in result["recordings"]:
+        mp4_path = rec.get("mp4_path")
+        if not mp4_path:
+            continue
+
+        mp4_file = Path(mp4_path)
+        file_stem = mp4_file.stem
+        rec_username = rec.get("username", "")
+
+        # Format duration
+        duration_seconds = rec.get("duration_seconds", 0)
+        hours = duration_seconds // 3600
+        minutes = (duration_seconds % 3600) // 60
+        seconds = duration_seconds % 60
+        if hours > 0:
+            duration_str = f"{hours}h{minutes:02d}m"
+        else:
+            duration_str = f"{minutes}m{seconds:02d}s"
+
+        # Format size
+        mp4_size = rec.get("mp4_size") or rec.get("file_size", 0)
+
+        # Thumbnail
+        thumb_path = OUTPUT_DIR / "thumbnails" / rec_username / f"{file_stem}.jpg"
+
+        recordings.append({
+            "recordingId": rec.get("recording_id", file_stem),
+            "username": rec_username,
+            "filename": mp4_file.name,
+            "date": file_stem,
+            "size": mp4_size,
+            "size_formatted": format_bytes(mp4_size),
+            "duration": duration_seconds,
+            "duration_str": duration_str,
+            "url": f"/streams/records/{rec_username}/{mp4_file.name}",
+            "thumbnail": f"/api/recording-thumbnail/{rec_username}/{file_stem}.jpg" if thumb_path.exists() else None,
+            "createdAt": rec.get("created_at"),
+        })
+
+    # Get distinct usernames for filter dropdown
+    usernames = await db.get_distinct_recording_usernames()
+
+    return {
+        "recordings": recordings,
+        "total": result["total"],
+        "totalSize": result["total_size"],
+        "totalSizeFormatted": format_bytes(result["total_size"]),
+        "page": result["page"],
+        "limit": result["limit"],
+        "totalPages": result["total_pages"],
+        "usernames": usernames,
+    }
 
 
 @app.get("/api/recording-thumbnail/{username}/{filename}")
@@ -1029,6 +1164,141 @@ async def delete_recording(username: str, filename: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ============================================
+# Settings / Blacklisted Tags Endpoints
+# ============================================
+
+@app.get("/api/settings/blacklisted-tags")
+async def get_blacklisted_tags():
+    """Get the list of blacklisted tags"""
+    tags = await db.get_blacklisted_tags()
+    return {"tags": tags}
+
+
+@app.post("/api/settings/blacklisted-tags")
+async def set_blacklisted_tags(body: dict):
+    """Set the list of blacklisted tags"""
+    tags = body.get("tags", [])
+    if not isinstance(tags, list):
+        raise HTTPException(status_code=400, detail="tags must be a list")
+    # Normalize: lowercase, strip, deduplicate
+    tags = list(set(t.strip().lower() for t in tags if t.strip()))
+    await db.set_blacklisted_tags(tags)
+    return {"tags": tags}
+
+
+# ============================================
+# Follow/Unfollow on Chaturbate
+# ============================================
+
+@app.post("/api/chaturbate/follow/{username}")
+async def follow_model_on_chaturbate(username: str):
+    """Follow a model on Chaturbate"""
+    if not chaturbate_api:
+        raise HTTPException(status_code=503, detail="Chaturbate API not initialized")
+    success = await chaturbate_api.follow_model(username)
+    if success:
+        return {"success": True, "message": f"Now following {username}"}
+    raise HTTPException(status_code=400, detail=f"Failed to follow {username}")
+
+
+@app.post("/api/chaturbate/unfollow/{username}")
+async def unfollow_model_on_chaturbate(username: str):
+    """Unfollow a model on Chaturbate"""
+    if not chaturbate_api:
+        raise HTTPException(status_code=503, detail="Chaturbate API not initialized")
+    success = await chaturbate_api.unfollow_model(username)
+    if success:
+        return {"success": True, "message": f"Unfollowed {username}"}
+    raise HTTPException(status_code=400, detail=f"Failed to unfollow {username}")
+
+
+@app.get("/api/chaturbate/is-following/{username}")
+async def is_following_model(username: str):
+    """Check if following a model on Chaturbate"""
+    if not chaturbate_api:
+        return {"isFollowing": False}
+    is_following = await chaturbate_api.is_following(username)
+    return {"isFollowing": is_following}
+
+
+# ============================================
+# Auto-record Toggle
+# ============================================
+
+@app.patch("/api/models/{username}/auto-record")
+async def toggle_auto_record(username: str, body: dict):
+    """Toggle auto-record for a model"""
+    existing = await db.get_model(username)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Model not found")
+
+    auto_record = body.get("autoRecord")
+    if auto_record is None:
+        raise HTTPException(status_code=400, detail="autoRecord field required")
+
+    await db.add_or_update_model(
+        username=username,
+        auto_record=bool(auto_record),
+        record_quality=existing.get("record_quality", "best"),
+        retention_days=existing.get("retention_days", 30)
+    )
+    return {"success": True, "autoRecord": bool(auto_record)}
+
+
+# ============================================
+# Playback Position Endpoints
+# ============================================
+
+@app.get("/api/playback-position/{recording_id}")
+async def get_playback_position(recording_id: str):
+    """Get saved playback position for a recording"""
+    pos = await db.get_playback_position(recording_id)
+    if pos:
+        return {
+            "recordingId": recording_id,
+            "position": pos["position_seconds"],
+            "duration": pos["duration_seconds"],
+        }
+    return {"recordingId": recording_id, "position": 0, "duration": 0}
+
+
+@app.post("/api/playback-position/{recording_id}")
+async def save_playback_position(recording_id: str, body: dict):
+    """Save playback position for a recording"""
+    position = body.get("position", 0)
+    duration = body.get("duration", 0)
+    username = body.get("username", "")
+    await db.save_playback_position(recording_id, username, position, duration)
+    return {"success": True}
+
+
+# ============================================
+# Recordings grouped by model
+# ============================================
+
+@app.get("/api/recordings-by-model")
+async def get_recordings_by_model():
+    """Get recordings grouped by model with stats"""
+    groups = await db.get_recordings_grouped_by_model()
+
+    # Add thumbnail info for each model
+    result = []
+    for group in groups:
+        username = group["username"]
+        thumb_url = f"/api/thumbnail/{username}"
+        result.append({
+            "username": username,
+            "recordingCount": group["recording_count"],
+            "totalSize": group["total_size"],
+            "lastRecordingAt": group["last_recording_at"],
+            "totalDuration": group["total_duration"],
+            "thumbnail": thumb_url,
+        })
+
+    return {"models": result}
+
+
 @app.post("/api/recordings/recalculate-durations")
 async def recalculate_all_durations():
     """Recalcule les durées de tous les enregistrements"""
@@ -1168,42 +1438,52 @@ async def auto_record_task():
                 cached_status = await db.get_model(username)
                 
                 if cached_status and cached_status.get('is_online'):
-                    # Modèle en ligne selon le cache, vérifier le flux HLS
+                    # Modèle en ligne selon le cache, résoudre le flux HLS
                     try:
-                        api_url = f"https://chaturbate.com/api/chatvideocontext/{username}/"
-                        headers = {
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                            "Referer": "https://chaturbate.com/",
-                        }
-                        
-                        resp = requests.get(api_url, headers=headers, timeout=10)
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            hls_source = data.get('hls_source')
-                            
-                            if hls_source:
-                                # Lancer l'enregistrement
-                                logger.background_task("auto-record", "Modèle en ligne détecté", username=username)
-                                
-                                try:
-                                    sess = manager.start_session(
-                                        input_url=hls_source,
-                                        display_name=username,
-                                        person=username
-                                    )
-                                    
-                                    if sess:
-                                        logger.success("Auto-enregistrement démarré", 
-                                                     task="auto-record",
-                                                     username=username,
-                                                     session_id=sess.id)
-                                except RuntimeError as e:
-                                    logger.warning("Impossible démarrer enregistrement",
+                        hls_source = None
+
+                        # Try async resolver first (uses authenticated API)
+                        try:
+                            from .resolvers.chaturbate import resolve_m3u8_async
+                            hls_source = await resolve_m3u8_async(username)
+                        except Exception:
+                            pass
+
+                        # Fallback to direct API
+                        if not hls_source:
+                            api_url = f"https://chaturbate.com/api/chatvideocontext/{username}/"
+                            headers = {
+                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                                "Referer": "https://chaturbate.com/",
+                            }
+                            resp = requests.get(api_url, headers=headers, timeout=10)
+                            if resp.status_code == 200:
+                                data = resp.json()
+                                hls_source = data.get('hls_source')
+
+                        if hls_source:
+                            # Lancer l'enregistrement
+                            logger.background_task("auto-record", "Modèle en ligne détecté", username=username)
+
+                            try:
+                                sess = manager.start_session(
+                                    input_url=hls_source,
+                                    display_name=username,
+                                    person=username
+                                )
+
+                                if sess:
+                                    logger.success("Auto-enregistrement démarré",
                                                  task="auto-record",
                                                  username=username,
-                                                 error=str(e))
-                                    continue
-                                
+                                                 session_id=sess.id)
+                            except RuntimeError as e:
+                                logger.warning("Impossible démarrer enregistrement",
+                                             task="auto-record",
+                                             username=username,
+                                             error=str(e))
+                                continue
+
                     except Exception as e:
                         logger.error("Erreur vérification modèle",
                                    task="auto-record",
@@ -1294,18 +1574,81 @@ async def cleanup_old_recordings_task():
             await asyncio.sleep(3600)
 
 
+async def sync_following_task(chaturbate_api, auth_service):
+    """Background task: sync followed models every 5 minutes"""
+    while True:
+        try:
+            await asyncio.sleep(300)  # 5 minutes
+
+            status = auth_service.get_status()
+            if not status.get("isLoggedIn"):
+                continue
+
+            models = await chaturbate_api.get_followed_models()
+            if models:
+                for model in models:
+                    await db.upsert_followed_model(
+                        username=model["username"],
+                        display_name=model.get("display_name"),
+                        is_online=model.get("is_online", False),
+                        viewers=model.get("viewers", 0),
+                        thumbnail_url=model.get("thumbnail_url"),
+                    )
+                logger.debug("Following synced", count=len(models), task="following-sync")
+        except Exception as e:
+            logger.error("Following sync error", task="following-sync", error=str(e))
+            await asyncio.sleep(60)
+
+
 @app.on_event("startup")
 async def startup_event():
     """Démarre les background tasks au démarrage de l'application"""
     # Initialiser la base de données
     await db.initialize()
-    
+
     # Migrer les données depuis le JSON si nécessaire
     await db.migrate_from_json(MODELS_FILE)
-    
+
+    # Initialize FlareSolverr client
+    flaresolverr = FlareSolverrClient(FLARESOLVERR_URL)
+    fs_available = await flaresolverr.is_available()
+    if fs_available:
+        logger.info("FlareSolverr connecté", url=FLARESOLVERR_URL)
+    else:
+        logger.info("FlareSolverr non disponible (optionnel)", url=FLARESOLVERR_URL)
+
+    # Initialize Chaturbate auth service
+    cb_auth = ChaturbateAuthService(db, flaresolverr)
+    await cb_auth.initialize()
+
+    # Initialize Chaturbate API client
+    global chaturbate_api
+    cb_api = ChaturbateAPI(cb_auth, flaresolverr)
+    chaturbate_api = cb_api
+
+    # Wire up API routers
+    auth_router.init(cb_auth, flaresolverr)
+    discover_router.init(cb_api, db)
+    following_router.init(cb_api, cb_auth, db)
+
+    # Set authenticated resolver for chaturbate
+    from .resolvers.chaturbate import set_chaturbate_api
+    set_chaturbate_api(cb_api)
+
+    # Auto-login if env vars are set
+    if CHATURBATE_USERNAME and CHATURBATE_PASSWORD:
+        logger.info("Auto-login Chaturbate", username=CHATURBATE_USERNAME)
+        result = await cb_auth.login(CHATURBATE_USERNAME, CHATURBATE_PASSWORD)
+        if result.get("success"):
+            logger.success("Chaturbate auto-login successful")
+        else:
+            logger.warning("Chaturbate auto-login failed", error=result.get("error"))
+
     # Démarrer les tâches de fond
     asyncio.create_task(monitor_models_task(db, manager, FFMPEG_PATH))
     asyncio.create_task(auto_record_task())
     asyncio.create_task(cleanup_old_recordings_task())
     asyncio.create_task(auto_convert_recordings_task(db, OUTPUT_DIR, manager, FFMPEG_PATH))
-    logger.info("Background tasks démarrés", tasks=["monitor", "auto-record", "cleanup", "convert"])
+    asyncio.create_task(sync_following_task(cb_api, cb_auth))
+    logger.info("Background tasks démarrés",
+                tasks=["monitor", "auto-record", "cleanup", "convert", "following-sync"])

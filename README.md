@@ -4,132 +4,119 @@
 [![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg)](https://www.docker.com/)
 [![Open Source](https://img.shields.io/badge/Open%20Source-Yes-green.svg)](https://github.com/raccommode/P-StreamRec)
 
-**Automatic recording of Chaturbate and m3u8 streams with a modern web interface**
+**Automatic Chaturbate & m3u8 stream recorder with a modern web interface.**
 
-![P-StreamRec Interface](screen.png)
+## Features
 
-## ✨ Features
+- **24/7 automatic recording** — monitors models and records when they go live
+- **Auto MP4 conversion** — converts TS to compressed MP4 in background (50-70% smaller)
+- **Discover** — browse live Chaturbate models with gender, tag, and search filters
+- **Following** — sync and view your followed models from your Chaturbate account
+- **Recordings** — manage all recordings with built-in video player
+- **Live Watch** — watch streams directly in the browser with HLS player
+- **Chaturbate auth** — login for better stream quality and followed models sync
+- **FlareSolverr** — automatic Cloudflare bypass via dedicated container
+- **Settings** — manage account, FlareSolverr status, tag blacklist
+- **Password protection** — optional login to secure the interface
+- **GitOps updates** — update the app directly from the UI
+- **Docker ready** — one command to get started
 
-- 🎥 **24/7 automatic recording** - Monitors and records when users go live
-- 🎬 **Auto MP4 conversion** - Automatically converts recordings to compressed MP4 after stream ends
-- 🌐 **Web interface** - Manage recordings and watch replays in browser
-- 📦 **Docker ready** - One command to get started
-- 🔄 **GitOps updates** - Update directly from the interface
-- 🎯 **Chaturbate + m3u8 support** - Works with any HLS stream
-- 💾 **Smart storage** - Unique ID per recording, automatic compression
-- 📊 **Size display** - Shows file sizes in MB or GB (>1000 MB)
+## Screenshots
 
-## ⚙️ Configuration (Environment Variables)
+| Discover | Following | Recordings |
+|----------|-----------|------------|
+| ![Discover](discover.png) | ![Following](following.png) | ![Recordings](recordings.png) |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `OUTPUT_DIR` | `/data` | Recordings folder (Docker volume) |
-| `PORT` | `8080` | Web interface port |
-| `FFMPEG_PATH` | `ffmpeg` | Path to ffmpeg |
-| `HLS_TIME` | `4` | HLS segment duration (seconds) |
-| `HLS_LIST_SIZE` | `6` | Number of segments in playlist |
-| `CB_RESOLVER_ENABLED` | `true` | **Enable Chaturbate support** |
-| `CB_COOKIE` | - | Chaturbate session cookie (optional) |
-| `PASSWORD` | - | **Password to protect access** (optional) |
-| `AUTO_RECORD_USERS` | - | Comma-separated list of users to auto-record |
-| `TZ` | `UTC` | Timezone (e.g., `America/New_York`) |
+## Quick Start
 
-## 🚀 Quick Start
+### Docker Compose (recommended, includes FlareSolverr)
 
-### Docker Run
-```bash
-docker run -d \
-  --name p-streamrec \
-  -p 8080:8080 \
-  -v ./data:/data \
-  -e CB_RESOLVER_ENABLED=true \
-  ghcr.io/raccommode/p-streamrec:latest
-```
-
-### Docker Compose
 ```yaml
 version: "3.8"
 services:
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    environment:
+      - LOG_LEVEL=info
+    ports:
+      - "8191:8191"
+    restart: unless-stopped
+
   p-streamrec:
     image: ghcr.io/raccommode/p-streamrec:latest
+    depends_on:
+      - flaresolverr
+    environment:
+      - CB_RESOLVER_ENABLED=true
+      - FLARESOLVERR_URL=http://flaresolverr:8191
     ports:
       - "8080:8080"
     volumes:
       - ./data:/data
-    environment:
-      - CB_RESOLVER_ENABLED=true
     restart: unless-stopped
+```
+
+### Docker Run (simple)
+
+```bash
+docker run -d --name p-streamrec \
+  -p 8080:8080 -v ./data:/data \
+  -e CB_RESOLVER_ENABLED=true \
+  ghcr.io/raccommode/p-streamrec:latest
 ```
 
 **Access:** `http://localhost:8080`
 
-## 🔐 Password Protection (Optional)
+## Configuration
 
-Pour protéger l'accès à l'interface avec un mot de passe, définissez la variable `PASSWORD`:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OUTPUT_DIR` | `/data` | Recordings folder |
+| `PORT` | `8080` | Web interface port |
+| `FFMPEG_PATH` | `ffmpeg` | Path to FFmpeg |
+| `CB_RESOLVER_ENABLED` | `true` | Enable Chaturbate support |
+| `CB_REQUEST_DELAY` | `1.0` | Delay between Chaturbate requests (seconds) |
+| `PASSWORD` | — | Password to protect the interface (optional) |
+| `AUTO_RECORD_USERS` | — | Comma-separated usernames to auto-record |
+| `CHATURBATE_USERNAME` | — | Chaturbate login (optional, enables Following + better quality) |
+| `CHATURBATE_PASSWORD` | — | Chaturbate password (optional) |
+| `FLARESOLVERR_URL` | — | FlareSolverr URL (e.g. `http://flaresolverr:8191`) |
+| `TZ` | `UTC` | Timezone (e.g. `America/Toronto`) |
 
-```yaml
-environment:
-  - PASSWORD=votre_mot_de_passe_securise
-```
+## Usage
 
-**Comportement:**
-- **Sans PASSWORD**: Accès direct à l'interface (comportement par défaut)
-- **Avec PASSWORD**: Redirection vers `/login` pour authentification
-- Les sessions sont conservées pendant 30 jours
-- Bouton de déconnexion 🚪 disponible dans l'interface
+1. **Add a model** — click **+**, enter a Chaturbate username or m3u8 URL
+2. **Auto-record** — the system checks every 2 minutes and records when live
+3. **Auto-convert** — when the stream ends, TS is converted to MP4 automatically
+4. **Watch live** — click a model card to open the live player
+5. **Browse replays** — go to the Recordings page to watch or delete recordings
 
-## 📖 Usage
+### Recording format
 
-1. **Add a model**: Click **+** → Enter Chaturbate username or m3u8 URL
-2. **Auto-record**: System checks every 2 minutes and records when live
-3. **Auto-convert**: When stream ends, system converts TS to MP4 (50-70% smaller)
-4. **Watch replays**: Click model card → **Replays** tab (TS or MP4 available)
-5. **Update**: Click **GitOps** button in header to update app (Git deployment only)
-
-**Recording Format:**
-- Original: `/data/records/<username>/YYYYMMDD_HHMMSS_ID.ts` (MPEG-TS)
+- Original: `/data/records/<username>/YYYYMMDD_HHMMSS_ID.ts` (MPEG-TS, lossless)
 - Converted: `/data/records/<username>/YYYYMMDD_HHMMSS_ID.mp4` (H.264, auto-generated)
-- Each recording has unique ID: `username_YYYYMMDD_HHMMSS_sessionID`
 
-## 💻 Development
+### Storage estimates
+
+| Format | Size per hour |
+|--------|---------------|
+| TS (original) | ~2–4 GB |
+| MP4 (converted) | ~600 MB–1.2 GB |
+
+## Development
 
 ```bash
+git clone https://github.com/raccommode/P-StreamRec.git
+cd P-StreamRec
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-## 📂 File Management
+**Stack:** FastAPI, SQLite (aiosqlite), HLS.js, FFmpeg, Docker
 
-**Automatic Conversion:**
-- System automatically converts TS → MP4 when stream ends
-- MP4 files are 50-70% smaller (H.264 codec, CRF 23)
-- Conversion runs in background, no user action needed
-- Both TS and MP4 available in Replays tab
+## License
 
-**Play recordings:**
-- **Browser**: Use Replays tab (supports TS and MP4)
-- **VLC/MPV**: Open files directly from `/data/records/<username>/`
-- **MP4**: Better for streaming, smaller file size
-- **TS**: Original quality, no re-encoding
+**Non-Commercial Open Source License** — See [LICENSE](LICENSE)
 
-**Manual conversion (if needed):**
-```bash
-ffmpeg -i input.ts -c:v libx264 -crf 23 -c:a aac output.mp4
-```
-
-## ⚠️ Notes
-
-- **Storage**: TS ~2-4 GB/hour, MP4 ~600 MB-1.2 GB/hour (after conversion)
-- **Sizes displayed**: MB for files < 1000 MB, GB for larger files
-- **Unique IDs**: Each recording has timestamp + session ID for easy identification
-- Use only for public, legally accessible content
-
-## 📜 License
-
-**Non-Commercial Open Source License** - See [LICENSE](LICENSE)
-
-✅ Free to use, modify, and distribute  
-❌ **No commercial use or revenue generation**  
-🔄 Share modifications under same license  
-📝 Attribution required
+Free to use, modify, and distribute — **no commercial use** — share modifications under same license — attribution required

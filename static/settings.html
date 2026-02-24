@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings - P-StreamRec</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/loader.js"></script>
+  <script defer src="/static/settings.js"></script>
+</head>
+<body>
+  <div id="header-placeholder"></div>
+
+  <div class="container">
+    <h1 style="font-size: 1.75rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2rem;">Settings</h1>
+
+    <div class="settings-grid">
+      <!-- Chaturbate Account Section -->
+      <div class="settings-section">
+        <div class="settings-section-header">
+          <span class="icon">&#128100;</span>
+          <h3>Chaturbate Account</h3>
+        </div>
+        <div class="settings-section-body">
+          <div class="settings-row">
+            <span class="settings-row-label">Status</span>
+            <span class="status-indicator unknown" id="cbStatus">Checking...</span>
+          </div>
+          <div class="settings-row" id="cbUsernameRow" style="display: none;">
+            <span class="settings-row-label">Username</span>
+            <span class="settings-row-value" id="cbUsername">-</span>
+          </div>
+
+          <!-- Login form -->
+          <div id="cbLoginForm" style="margin-top: 1.5rem; display: none;">
+            <form class="settings-form" onsubmit="loginChaturbate(event)">
+              <div class="form-group">
+                <label for="cbUser">Username</label>
+                <input type="text" id="cbUser" placeholder="Your Chaturbate username" required />
+              </div>
+              <div class="form-group">
+                <label for="cbPass">Password</label>
+                <input type="password" id="cbPass" placeholder="Your Chaturbate password" required />
+              </div>
+              <div class="settings-actions">
+                <button type="submit" class="btn-primary" id="cbLoginBtn">Log In</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Logged in actions -->
+          <div id="cbLoggedInActions" style="margin-top: 1rem; display: none;">
+            <button class="btn-secondary" onclick="logoutChaturbate()" style="font-size: 0.9rem; padding: 0.6rem 1.25rem;">Disconnect Account</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- FlareSolverr Section -->
+      <div class="settings-section">
+        <div class="settings-section-header">
+          <span class="icon">&#128737;</span>
+          <h3>FlareSolverr</h3>
+        </div>
+        <div class="settings-section-body">
+          <div class="settings-row">
+            <span class="settings-row-label">Status</span>
+            <span class="status-indicator unknown" id="flareStatus">Checking...</span>
+          </div>
+          <div class="settings-row" id="flareVersionRow" style="display: none;">
+            <span class="settings-row-label">Version</span>
+            <span class="settings-row-value" id="flareVersion">-</span>
+          </div>
+          <div class="settings-row" id="flareUrlRow">
+            <span class="settings-row-label">URL</span>
+            <span class="settings-row-value" id="flareUrl" style="font-family: monospace; font-size: 0.85rem;">-</span>
+          </div>
+          <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+            FlareSolverr helps bypass Cloudflare protection when accessing Chaturbate.
+            It is configured via environment variables (FLARESOLVERR_URL).
+          </p>
+        </div>
+      </div>
+
+      <!-- Tag Blacklist Section -->
+      <div class="settings-section">
+        <div class="settings-section-header">
+          <span class="icon">&#127991;</span>
+          <h3>Tag Blacklist</h3>
+        </div>
+        <div class="settings-section-body">
+          <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;">
+            Models with these tags will be hidden from the Discover page. Tags are case-insensitive.
+          </p>
+          <div class="blacklist-input-row">
+            <input type="text" id="blacklistInput" placeholder="Enter a tag to blacklist..." style="flex: 1; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem;" />
+            <button class="btn-primary" onclick="addBlacklistedTag()" style="padding: 0.6rem 1.25rem; font-size: 0.9rem;">Add</button>
+          </div>
+          <div class="blacklisted-tags-list" id="blacklistedTagsList" style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
+        </div>
+      </div>
+
+      <!-- Recording Settings Section -->
+      <div class="settings-section">
+        <div class="settings-section-header">
+          <span class="icon">&#9881;</span>
+          <h3>Recording Settings</h3>
+        </div>
+        <div class="settings-section-body" id="recordingSettings">
+          <div class="settings-row">
+            <span class="settings-row-label">Output Directory</span>
+            <span class="settings-row-value" id="outputDir" style="font-family: monospace; font-size: 0.85rem;">-</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-label">FFmpeg Path</span>
+            <span class="settings-row-value" id="ffmpegPath" style="font-family: monospace; font-size: 0.85rem;">-</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-label">Check Interval</span>
+            <span class="settings-row-value" id="checkInterval">-</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-label">Auto Convert</span>
+            <span class="settings-row-value" id="autoConvert">-</span>
+          </div>
+          <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+            Recording settings are configured via environment variables or the configuration file.
+            Restart the application after making changes.
+          </p>
+        </div>
+      </div>
+
+      <!-- App Info Section -->
+      <div class="settings-section">
+        <div class="settings-section-header">
+          <span class="icon">&#8505;</span>
+          <h3>Application</h3>
+        </div>
+        <div class="settings-section-body">
+          <div class="settings-row">
+            <span class="settings-row-label">Version</span>
+            <span class="settings-row-value" id="appVersionSetting">-</span>
+          </div>
+          <div class="settings-row">
+            <span class="settings-row-label">API Status</span>
+            <span class="status-indicator connected" id="apiStatus">Connected</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="footer-placeholder"></div>
+</body>
+</html>

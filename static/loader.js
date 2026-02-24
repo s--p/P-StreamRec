@@ -7,7 +7,17 @@
       const placeholder = document.getElementById('header-placeholder');
       if (placeholder) {
         placeholder.outerHTML = html;
-        
+
+        // After header injection, highlight active nav link
+        const currentPath = window.location.pathname;
+        const navLinks = document.querySelectorAll('.nav-link');
+        navLinks.forEach(link => {
+          const href = link.getAttribute('href');
+          if (currentPath === href || (currentPath === '/' && href === '/discover')) {
+            link.classList.add('active');
+          }
+        });
+
         // Load version
         (async function loadVersion() {
           try {
@@ -19,7 +29,7 @@
             console.error('Error loading version:', e);
           }
         })();
-        
+
         // Check Git status
         (async function checkGitStatus() {
           try {
@@ -29,8 +39,8 @@
               const btn = document.getElementById('gitStatusBtn');
               if (btn && data.isGitRepo) {
                 btn.style.display = 'inline-block';
-                
-                if (data.updateAvailable) {
+
+                if (data.hasUpdates) {
                   document.getElementById('gitStatusIcon').textContent = '🆕';
                   document.getElementById('gitStatusText').textContent = 'Update!';
                   btn.style.borderColor = 'var(--accent)';

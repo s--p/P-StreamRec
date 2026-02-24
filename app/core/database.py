@@ -57,17 +57,66 @@ class Database:
                 )
             """)
             
+            # Table pour l'authentification Chaturbate
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS chaturbate_auth (
+                    id INTEGER PRIMARY KEY DEFAULT 1,
+                    username TEXT,
+                    password_hash TEXT,
+                    is_logged_in BOOLEAN DEFAULT 0,
+                    session_cookies TEXT,
+                    cf_clearance TEXT,
+                    csrf_token TEXT,
+                    last_login_at INTEGER,
+                    last_error TEXT,
+                    updated_at INTEGER
+                )
+            """)
+
+            # Table pour les modèles suivis sur Chaturbate
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS followed_models (
+                    username TEXT PRIMARY KEY,
+                    display_name TEXT,
+                    is_online BOOLEAN DEFAULT 0,
+                    viewers INTEGER DEFAULT 0,
+                    thumbnail_url TEXT,
+                    last_seen_online_at INTEGER,
+                    synced_at INTEGER
+                )
+            """)
+
+            # Table pour les paramètres (tags blacklistés, etc.)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at INTEGER
+                )
+            """)
+
+            # Table pour la position de lecture (reprise)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS playback_positions (
+                    recording_id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    position_seconds REAL DEFAULT 0,
+                    duration_seconds REAL DEFAULT 0,
+                    updated_at INTEGER
+                )
+            """)
+
             # Index pour les requêtes fréquentes
             await db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_models_online 
+                CREATE INDEX IF NOT EXISTS idx_models_online
                 ON models(is_online, username)
             """)
-            
+
             await db.execute("""
-                CREATE INDEX IF NOT EXISTS idx_recordings_username 
+                CREATE INDEX IF NOT EXISTS idx_recordings_username
                 ON recordings(username, created_at DESC)
             """)
-            
+
             await db.commit()
             
         self._initialized = True
@@ -276,6 +325,335 @@ class Database:
             )
             await db.commit()
     
+    # ==========================================
+    # Chaturbate Auth CRUD
+    # ==========================================
+
+    async def save_auth_state(
+        self,
+        username: str,
+        password_hash: str,
+        is_logged_in: bool = False,
+        session_cookies: Optional[str] = None,
+        cf_clearance: Optional[str] = None,
+        csrf_token: Optional[str] = None,
+        last_login_at: Optional[int] = None,
+        last_error: Optional[str] = None
+    ):
+        """Save or update Chaturbate auth state"""
+        await self.initialize()
+        now = int(datetime.now().timestamp())
+
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT INTO chaturbate_auth (
+                    id, username, password_hash, is_logged_in,
+                    session_cookies, cf_clearance, csrf_token,
+                    last_login_at, last_error, updated_at
+                )
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    username = ?,
+                    password_hash = ?,
+                    is_logged_in = ?,
+                    session_cookies = COALESCE(?, session_cookies),
+                    cf_clearance = COALESCE(?, cf_clearance),
+                    csrf_token = COALESCE(?, csrf_token),
+                    last_login_at = COALESCE(?, last_login_at),
+                    last_error = ?,
+                    updated_at = ?
+            """, (
+                username, password_hash, is_logged_in,
+                session_cookies, cf_clearance, csrf_token,
+                last_login_at, last_error, now,
+                username, password_hash, is_logged_in,
+                session_cookies, cf_clearance, csrf_token,
+                last_login_at, last_error, now
+            ))
+            await db.commit()
+
+    async def get_auth_state(self) -> Optional[Dict[str, Any]]:
+        """Get Chaturbate auth state"""
+        await self.initialize()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM chaturbate_auth WHERE id = 1"
+            )
+            row = await cursor.fetchone()
+            if row:
+                return dict(row)
+        return None
+
+    async def clear_auth_state(self):
+        """Clear Chaturbate auth state"""
+        await self.initialize()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM chaturbate_auth WHERE id = 1")
+            await db.commit()
+
+    # ==========================================
+    # Followed Models CRUD
+    # ==========================================
+
+    async def upsert_followed_model(
+        self,
+        username: str,
+        display_name: Optional[str] = None,
+        is_online: bool = False,
+        viewers: int = 0,
+        thumbnail_url: Optional[str] = None
+    ):
+        """Add or update a followed model"""
+        await self.initialize()
+        now = int(datetime.now().timestamp())
+
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT INTO followed_models (
+                    username, display_name, is_online, viewers,
+                    thumbnail_url, last_seen_online_at, synced_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(username) DO UPDATE SET
+                    display_name = COALESCE(?, display_name),
+                    is_online = ?,
+                    viewers = ?,
+                    thumbnail_url = COALESCE(?, thumbnail_url),
+                    last_seen_online_at = CASE WHEN ? THEN ? ELSE last_seen_online_at END,
+                    synced_at = ?
+            """, (
+                username, display_name, is_online, viewers,
+                thumbnail_url, now if is_online else None, now,
+                display_name, is_online, viewers, thumbnail_url,
+                is_online, now, now
+            ))
+            await db.commit()
+
+    async def get_all_followed(self) -> List[Dict[str, Any]]:
+        """Get all followed models"""
+        await self.initialize()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM followed_models ORDER BY is_online DESC, username"
+            )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async def clear_followed(self):
+        """Clear all followed models"""
+        await self.initialize()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM followed_models")
+            await db.commit()
+
+    async def remove_unfollowed(self, current_usernames: set):
+        """Remove followed models no longer in the followed list"""
+        await self.initialize()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute("SELECT username FROM followed_models")
+            rows = await cursor.fetchall()
+            for row in rows:
+                if row[0] not in current_usernames:
+                    await db.execute(
+                        "DELETE FROM followed_models WHERE username = ?",
+                        (row[0],)
+                    )
+            await db.commit()
+
+    async def get_all_recordings_paginated(
+        self,
+        page: int = 1,
+        limit: int = 20,
+        username_filter: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get all recordings with pagination"""
+        await self.initialize()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+
+            # Count total
+            count_sql = "SELECT COUNT(*) FROM recordings WHERE is_converted = 1"
+            count_params = []
+            if username_filter:
+                count_sql += " AND username = ?"
+                count_params.append(username_filter)
+
+            cursor = await db.execute(count_sql, count_params)
+            row = await cursor.fetchone()
+            total = row[0] if row else 0
+
+            # Fetch page
+            offset = (page - 1) * limit
+            query_sql = """
+                SELECT * FROM recordings
+                WHERE is_converted = 1
+            """
+            query_params = []
+            if username_filter:
+                query_sql += " AND username = ?"
+                query_params.append(username_filter)
+            query_sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            query_params.extend([limit, offset])
+
+            cursor = await db.execute(query_sql, query_params)
+            rows = await cursor.fetchall()
+
+            # Total size
+            size_sql = "SELECT COALESCE(SUM(COALESCE(mp4_size, file_size)), 0) FROM recordings WHERE is_converted = 1"
+            size_params = []
+            if username_filter:
+                size_sql = "SELECT COALESCE(SUM(COALESCE(mp4_size, file_size)), 0) FROM recordings WHERE is_converted = 1 AND username = ?"
+                size_params.append(username_filter)
+
+            cursor = await db.execute(size_sql, size_params)
+            size_row = await cursor.fetchone()
+            total_size = size_row[0] if size_row else 0
+
+            return {
+                "recordings": [dict(row) for row in rows],
+                "total": total,
+                "total_size": total_size,
+                "page": page,
+                "limit": limit,
+                "total_pages": max(1, (total + limit - 1) // limit)
+            }
+
+    async def get_distinct_recording_usernames(self) -> List[str]:
+        """Get list of usernames that have recordings"""
+        await self.initialize()
+
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT DISTINCT username FROM recordings ORDER BY username"
+            )
+            rows = await cursor.fetchall()
+            return [row[0] for row in rows]
+
+    # ==========================================
+    # Settings CRUD
+    # ==========================================
+
+    async def get_setting(self, key: str) -> Optional[str]:
+        """Get a setting value by key"""
+        await self.initialize()
+        async with aiosqlite.connect(self.db_path) as db:
+            cursor = await db.execute(
+                "SELECT value FROM settings WHERE key = ?", (key,)
+            )
+            row = await cursor.fetchone()
+            return row[0] if row else None
+
+    async def set_setting(self, key: str, value: str):
+        """Set a setting value"""
+        await self.initialize()
+        now = int(datetime.now().timestamp())
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT INTO settings (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = ?, updated_at = ?
+            """, (key, value, now, value, now))
+            await db.commit()
+
+    async def get_blacklisted_tags(self) -> List[str]:
+        """Get blacklisted tags list"""
+        value = await self.get_setting("blacklisted_tags")
+        if value:
+            return json.loads(value)
+        return []
+
+    async def set_blacklisted_tags(self, tags: List[str]):
+        """Set blacklisted tags list"""
+        await self.set_setting("blacklisted_tags", json.dumps(tags))
+
+    # ==========================================
+    # Playback Positions CRUD
+    # ==========================================
+
+    async def get_playback_position(self, recording_id: str) -> Optional[Dict[str, Any]]:
+        """Get playback position for a recording"""
+        await self.initialize()
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute(
+                "SELECT * FROM playback_positions WHERE recording_id = ?",
+                (recording_id,)
+            )
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    async def save_playback_position(
+        self,
+        recording_id: str,
+        username: str,
+        position_seconds: float,
+        duration_seconds: float = 0
+    ):
+        """Save playback position for a recording"""
+        await self.initialize()
+        now = int(datetime.now().timestamp())
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("""
+                INSERT INTO playback_positions (recording_id, username, position_seconds, duration_seconds, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(recording_id) DO UPDATE SET
+                    position_seconds = ?,
+                    duration_seconds = ?,
+                    updated_at = ?
+            """, (recording_id, username, position_seconds, duration_seconds, now,
+                  position_seconds, duration_seconds, now))
+            await db.commit()
+
+    async def get_all_playback_positions(self, username: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get all playback positions, optionally filtered by username"""
+        await self.initialize()
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            if username:
+                cursor = await db.execute(
+                    "SELECT * FROM playback_positions WHERE username = ? ORDER BY updated_at DESC",
+                    (username,)
+                )
+            else:
+                cursor = await db.execute(
+                    "SELECT * FROM playback_positions ORDER BY updated_at DESC"
+                )
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    async def get_recordings_grouped_by_model(self) -> List[Dict[str, Any]]:
+        """Get recordings grouped by model with stats"""
+        await self.initialize()
+        async with aiosqlite.connect(self.db_path) as db:
+            db.row_factory = aiosqlite.Row
+            cursor = await db.execute("""
+                SELECT
+                    username,
+                    COUNT(*) as recording_count,
+                    COALESCE(SUM(COALESCE(mp4_size, file_size)), 0) as total_size,
+                    MAX(created_at) as last_recording_at,
+                    COALESCE(SUM(duration_seconds), 0) as total_duration
+                FROM recordings
+                WHERE is_converted = 1
+                GROUP BY username
+                ORDER BY last_recording_at DESC
+            """)
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
+    # ==========================================
+    # JSON Migration
+    # ==========================================
+
     async def migrate_from_json(self, json_path: Path):
         """Migre les données depuis le fichier JSON vers SQLite"""
         if not json_path.exists():

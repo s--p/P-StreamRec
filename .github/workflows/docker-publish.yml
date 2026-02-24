@@ -1,33 +1,31 @@
-name: Build and Push Docker Image
+name: Build, Push & Release
 
 on:
   push:
     tags:
       - '*'
-  release:
-    types: [published]
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      
+
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -36,7 +34,7 @@ jobs:
           tags: |
             type=ref,event=tag
             type=raw,value=latest
-      
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -46,3 +44,27 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Generate release notes from version.json
+        id: notes
+        run: |
+          VERSION=$(jq -r '.version' version.json)
+          BODY=$(jq -r '.changelog | map("- " + .) | join("\n")' version.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "body<<EOF"
+            echo "## Changelog"
+            echo ""
+            echo "$BODY"
+            echo ""
+            echo "---"
+            echo "Docker image: \`ghcr.io/raccommode/p-streamrec:${GITHUB_REF_NAME}\`"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ steps.notes.outputs.version }}
+          body: ${{ steps.notes.outputs.body }}
+          generate_release_notes: false

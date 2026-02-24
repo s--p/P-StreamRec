@@ -20,6 +20,21 @@ HLS_LIST_SIZE = int(os.getenv("HLS_LIST_SIZE", "6"))
 CB_RESOLVER_ENABLED = os.getenv("CB_RESOLVER_ENABLED", "false").lower() in {"1", "true", "yes"}
 CB_COOKIE: Optional[str] = os.getenv("CB_COOKIE")
 
+# Chaturbate Authentication
+CHATURBATE_USERNAME: Optional[str] = os.getenv("CHATURBATE_USERNAME")
+CHATURBATE_PASSWORD: Optional[str] = os.getenv("CHATURBATE_PASSWORD")
+
+# Backward-compatible cookie env vars (fallback)
+CHATURBATE_CSRFTOKEN: Optional[str] = os.getenv("CHATURBATE_CSRFTOKEN")
+CHATURBATE_SESSIONID: Optional[str] = os.getenv("CHATURBATE_SESSIONID")
+
+# FlareSolverr
+FLARESOLVERR_URL: str = os.getenv("FLARESOLVERR_URL", "http://flaresolverr:8191")
+FLARESOLVERR_MAX_TIMEOUT: int = int(os.getenv("FLARESOLVERR_MAX_TIMEOUT", "60000"))
+
+# Chaturbate request settings
+CB_REQUEST_DELAY: float = float(os.getenv("CB_REQUEST_DELAY", "1.0"))
+
 # Configuration serveur
 PORT = int(os.getenv("PORT", "8080"))
 HOST = os.getenv("HOST", "0.0.0.0")
@@ -39,6 +54,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 (OUTPUT_DIR / "sessions").mkdir(exist_ok=True)
 (OUTPUT_DIR / "records").mkdir(exist_ok=True)
 (OUTPUT_DIR / "thumbnails").mkdir(exist_ok=True)
+(OUTPUT_DIR / "cookies").mkdir(exist_ok=True)
 
 # Fichiers de données
 MODELS_FILE = OUTPUT_DIR / "models.json"
