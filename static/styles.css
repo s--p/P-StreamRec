@@ -2484,12 +2484,9 @@ button {
 .watch-player-container {
   position: relative;
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto 1.5rem;
-  border-radius: 12px;
   overflow: hidden;
   background: #000;
-  aspect-ratio: 16 / 9;
+  height: calc(100vh - 130px);
 }
 
 .watch-video {
@@ -2497,6 +2494,98 @@ button {
   height: 100%;
   object-fit: contain;
   background: #000;
+}
+
+/* Live Controls Bar (no seek bar for live streams) */
+.live-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.watch-player-container:hover .live-controls,
+.player-container:hover .live-controls {
+  opacity: 1;
+}
+
+.live-ctrl-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  transition: background 0.2s;
+  line-height: 1;
+}
+
+.live-ctrl-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.live-volume-slider {
+  width: 80px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.live-volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+
+.live-volume-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+.live-badge {
+  color: #ef4444;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid #ef4444;
+  border-radius: 4px;
+  user-select: none;
+}
+
+.live-ctrl-spacer {
+  flex: 1;
+}
+
+/* Show controls in fullscreen */
+.watch-player-container:fullscreen .live-controls,
+.player-container:fullscreen .live-controls {
+  opacity: 1;
+}
+
+/* Hide live controls on the recordings tab video (model page) */
+.player-container .live-controls {
+  pointer-events: auto;
 }
 
 .watch-offline-overlay {
@@ -2532,9 +2621,8 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 1rem 0;
+  margin: 0;
+  padding: 0.75rem 1.5rem;
   flex-wrap: wrap;
   gap: 1rem;
 }
@@ -2993,10 +3081,10 @@ button {
 }
 
 .player-modal-content {
-  width: 90%;
-  max-width: 1100px;
+  width: 98%;
+  max-width: none;
   background: var(--bg-secondary);
-  border-radius: 16px;
+  border-radius: 8px;
   overflow: hidden;
   box-shadow: var(--shadow-lg);
 }
@@ -3030,7 +3118,7 @@ button {
 
 .recording-video {
   width: 100%;
-  max-height: 70vh;
+  max-height: calc(100vh - 100px);
   background: #000;
 }
 
@@ -3079,7 +3167,12 @@ button {
   }
 
   .player-modal-content {
-    width: 95%;
+    width: 100%;
+    border-radius: 0;
+  }
+
+  .watch-player-container {
+    height: calc(100vh - 180px);
   }
 }
 
@@ -3091,6 +3184,10 @@ button {
 
   .watch-username {
     font-size: 1.25rem;
+  }
+
+  .watch-player-container {
+    height: calc(100vh - 200px);
   }
 }
 

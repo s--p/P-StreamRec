@@ -352,6 +352,67 @@ async function toggleAutoRecord() {
 }
 
 // ============================================
+// Live Player Controls (no seek bar)
+// ============================================
+function togglePlayPause() {
+  var video = document.getElementById('videoPlayer');
+  var btn = document.getElementById('playPauseBtn');
+  if (video.paused) {
+    video.play().catch(function(){});
+    btn.innerHTML = '&#9646;&#9646;';
+  } else {
+    video.pause();
+    btn.innerHTML = '&#9654;';
+  }
+}
+
+function toggleMute() {
+  var video = document.getElementById('videoPlayer');
+  var btn = document.getElementById('muteBtn');
+  var slider = document.getElementById('volumeSlider');
+  video.muted = !video.muted;
+  if (video.muted) {
+    btn.innerHTML = '&#128263;';
+    slider.value = 0;
+  } else {
+    btn.innerHTML = '&#128266;';
+    slider.value = video.volume;
+  }
+}
+
+function changeVolume(val) {
+  var video = document.getElementById('videoPlayer');
+  var btn = document.getElementById('muteBtn');
+  video.volume = parseFloat(val);
+  video.muted = (parseFloat(val) === 0);
+  if (video.muted || parseFloat(val) === 0) {
+    btn.innerHTML = '&#128263;';
+  } else {
+    btn.innerHTML = '&#128266;';
+  }
+}
+
+function toggleFullscreen() {
+  var container = document.querySelector('.watch-player-container');
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    container.requestFullscreen().catch(function(){});
+  }
+}
+
+// Update play/pause button when video state changes
+function setupLiveControlsListeners() {
+  var video = document.getElementById('videoPlayer');
+  var btn = document.getElementById('playPauseBtn');
+  video.addEventListener('play', function() { btn.innerHTML = '&#9646;&#9646;'; });
+  video.addEventListener('pause', function() { btn.innerHTML = '&#9654;'; });
+
+  // Click on video to toggle play/pause
+  video.addEventListener('click', function() { togglePlayPause(); });
+}
+
+// ============================================
 // Notifications
 // ============================================
 function showNotification(message, type) {
@@ -389,5 +450,6 @@ window.addEventListener('DOMContentLoaded', function() {
   style.textContent = '@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }';
   document.head.appendChild(style);
 
+  setupLiveControlsListeners();
   initWatch();
 });
