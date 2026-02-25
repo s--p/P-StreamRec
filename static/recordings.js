@@ -6,13 +6,26 @@
 let allRecordings = {};
 let currentDetailUser = '';
 let currentPlayer = null;
+let showTsFiles = false;
 
 // ============================================
 // Load recordings grouped by model
 // ============================================
+async function loadShowTsSetting() {
+  try {
+    var res = await fetch('/api/settings/recording');
+    if (res.ok) {
+      var data = await res.json();
+      showTsFiles = !!data.show_ts_files;
+    }
+  } catch (e) {
+    console.error('Error loading show_ts setting:', e);
+  }
+}
+
 async function loadRecordingsByModel() {
   try {
-    var res = await fetch('/api/recordings-by-model');
+    var res = await fetch('/api/recordings-by-model?show_ts=' + showTsFiles);
     if (res.ok) {
       var data = await res.json();
       return data.models || [];
@@ -28,7 +41,7 @@ async function loadRecordingsByModel() {
 // ============================================
 async function loadAllRecordings() {
   try {
-    var res = await fetch('/api/all-recordings?limit=10000');
+    var res = await fetch('/api/all-recordings?limit=10000&show_ts=' + showTsFiles);
     if (res.ok) {
       var data = await res.json();
       return data;
@@ -116,7 +129,7 @@ async function showModelRecordings(username) {
   list.innerHTML = '<div class="empty-message"><div class="icon">&#9203;</div><p>Loading...</p></div>';
 
   try {
-    var res = await fetch('/api/recordings/' + encodeURIComponent(username));
+    var res = await fetch('/api/recordings/' + encodeURIComponent(username) + '?show_ts=' + showTsFiles);
     if (!res.ok) {
       list.innerHTML = '<div class="empty-message"><div class="icon">&#9888;</div><p>Failed to load recordings.</p></div>';
       return;
@@ -220,19 +233,26 @@ async function playRecording(username, filename, recordingId) {
   }
   video.removeAttribute('src');
 
-  if (filename.endsWith('.ts') && Hls.isSupported()) {
-    currentPlayer = new Hls();
-    currentPlayer.loadSource(url);
-    currentPlayer.attachMedia(video);
-    currentPlayer.on(Hls.Events.MANIFEST_PARSED, function() {
-      loadAndSeek(video, recordingId, username);
-    });
-  } else {
-    video.src = url;
-    video.onloadedmetadata = function() {
-      loadAndSeek(video, recordingId, username);
-    };
-  }
+  // TS files are raw MPEG-TS, not HLS streams - use direct playback
+  video.src = url;
+  video.onloadedmetadata = function() {
+    loadAndSeek(video, recordingId, username);
+  };
+  // Fallback: if native playback fails for TS, try with type hint
+  video.onerror = function() {
+    if (filename.endsWith('.ts') && !video.dataset.retried) {
+      video.dataset.retried = 'true';
+      var source = document.createElement('source');
+      source.src = url;
+      source.type = 'video/mp2t';
+      video.removeAttribute('src');
+      video.appendChild(source);
+      video.load();
+      video.onloadedmetadata = function() {
+        loadAndSeek(video, recordingId, username);
+      };
+    }
+  };
 
   // Save position periodically
   var saveInterval = setInterval(function() {
@@ -287,6 +307,9 @@ function closePlayer() {
     currentPlayer = null;
   }
   video.removeAttribute('src');
+  delete video.dataset.retried;
+  // Remove any <source> elements added for TS fallback
+  while (video.firstChild) { video.removeChild(video.firstChild); }
   video.load();
 
   var interval = modal.dataset.saveInterval;
@@ -376,7 +399,10 @@ window.addEventListener('DOMContentLoaded', function() {
 
   var loadingState = document.getElementById('loadingState');
 
-  Promise.all([loadRecordingsByModel(), loadAllRecordings()]).then(function(results) {
+  // Load show_ts setting first, then load recordings
+  loadShowTsSetting().then(function() {
+    return Promise.all([loadRecordingsByModel(), loadAllRecordings()]);
+  }).then(function(results) {
     var models = results[0];
     var allData = results[1];
 

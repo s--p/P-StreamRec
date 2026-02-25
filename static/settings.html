@@ -141,6 +141,16 @@
               <span class="toggle-slider"></span>
             </label>
           </div>
+          <div class="settings-row">
+            <div>
+              <span class="settings-row-label">Show TS Files in Recordings</span>
+              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Show raw .TS files in the Recordings page (only MP4 files are shown by default)</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="showTsToggle" onchange="updateRecordingSetting('show_ts_files', this.checked)" />
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
           <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
             Changes take effect immediately without restart. Set a model's retention to 0 to keep recordings forever.
           </p>

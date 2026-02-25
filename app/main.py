@@ -177,9 +177,15 @@ async def serve_recording_protected(username: str, filename: str):
     file_size = file_path.stat().st_size
     logger.file_operation("Lecture", str(file_path), size=file_size)
     
+    # Set correct media type based on file extension
+    if filename.endswith(".mp4"):
+        media_type = "video/mp4"
+    else:
+        media_type = "video/mp2t"
+
     return FileResponse(
         path=str(file_path),
-        media_type="video/mp2t",
+        media_type=media_type,
         headers={
             "Content-Disposition": f'inline; filename="{filename}"',
             "Cache-Control": "public, max-age=3600",
@@ -809,7 +815,7 @@ async def get_dashboard():
 
 
 @app.get("/api/recordings/{username}")
-async def list_recordings(username: str):
+async def list_recordings(username: str, show_ts: bool = False):
     """Liste les enregistrements (MP4 convertis ou TS bruts)"""
     from datetime import datetime
     from .core.utils import format_bytes
@@ -830,6 +836,9 @@ async def list_recordings(username: str):
             serve_path = Path(mp4_raw)
             file_size = rec.get('mp4_size') or serve_path.stat().st_size
         elif ts_raw and Path(ts_raw).exists():
+            # Skip TS files unless show_ts is enabled
+            if not show_ts:
+                continue
             serve_path = Path(ts_raw)
             file_size = rec.get('file_size') or serve_path.stat().st_size
         else:
@@ -886,7 +895,8 @@ async def list_recordings(username: str):
 async def get_all_recordings(
     page: int = 1,
     limit: int = 20,
-    username: str = None
+    username: str = None,
+    show_ts: bool = False
 ):
     """Get all recordings across all models with pagination"""
     from .core.utils import format_bytes
@@ -909,6 +919,9 @@ async def get_all_recordings(
             serve_file = Path(mp4_raw)
             file_size = rec.get("mp4_size") or serve_file.stat().st_size
         elif ts_raw and Path(ts_raw).exists():
+            # Skip TS files unless show_ts is enabled
+            if not show_ts:
+                continue
             serve_file = Path(ts_raw)
             file_size = rec.get("file_size") or serve_file.stat().st_size
         else:
@@ -1194,11 +1207,12 @@ async def set_blacklisted_tags(body: dict):
 
 @app.get("/api/settings/recording")
 async def get_recording_settings():
-    """Get recording settings (auto_convert, keep_ts)"""
+    """Get recording settings (auto_convert, keep_ts, show_ts_files)"""
     from .core.config import AUTO_CONVERT, KEEP_TS
 
     auto_convert_val = await db.get_setting("auto_convert")
     keep_ts_val = await db.get_setting("keep_ts")
+    show_ts_val = await db.get_setting("show_ts_files")
 
     # Fall back to env var defaults if not set in DB
     if auto_convert_val is not None:
@@ -1211,16 +1225,20 @@ async def get_recording_settings():
     else:
         keep_ts = KEEP_TS
 
-    return {"auto_convert": auto_convert, "keep_ts": keep_ts}
+    show_ts_files = show_ts_val is not None and show_ts_val.lower() in {"1", "true", "yes"}
+
+    return {"auto_convert": auto_convert, "keep_ts": keep_ts, "show_ts_files": show_ts_files}
 
 
 @app.put("/api/settings/recording")
 async def update_recording_settings(body: dict):
-    """Update recording settings (auto_convert, keep_ts)"""
+    """Update recording settings (auto_convert, keep_ts, show_ts_files)"""
     if "auto_convert" in body:
         await db.set_setting("auto_convert", str(body["auto_convert"]).lower())
     if "keep_ts" in body:
         await db.set_setting("keep_ts", str(body["keep_ts"]).lower())
+    if "show_ts_files" in body:
+        await db.set_setting("show_ts_files", str(body["show_ts_files"]).lower())
 
     # Return current state
     return await get_recording_settings()
@@ -1317,9 +1335,9 @@ async def save_playback_position(recording_id: str, body: dict):
 # ============================================
 
 @app.get("/api/recordings-by-model")
-async def get_recordings_by_model():
+async def get_recordings_by_model(show_ts: bool = False):
     """Get recordings grouped by model with stats"""
-    groups = await db.get_recordings_grouped_by_model()
+    groups = await db.get_recordings_grouped_by_model(show_ts=show_ts)
 
     # Add thumbnail info for each model
     result = []

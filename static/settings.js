@@ -191,8 +191,10 @@ async function loadRecordingSettings() {
       var data = await res.json();
       var autoConvertToggle = document.getElementById('autoConvertToggle');
       var keepTsToggle = document.getElementById('keepTsToggle');
+      var showTsToggle = document.getElementById('showTsToggle');
       if (autoConvertToggle) autoConvertToggle.checked = !!data.auto_convert;
       if (keepTsToggle) keepTsToggle.checked = !!data.keep_ts;
+      if (showTsToggle) showTsToggle.checked = !!data.show_ts_files;
     }
   } catch (e) {
     console.error('Error loading recording settings:', e);

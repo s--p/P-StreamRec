@@ -630,12 +630,18 @@ class Database:
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
-    async def get_recordings_grouped_by_model(self) -> List[Dict[str, Any]]:
+    async def get_recordings_grouped_by_model(self, show_ts: bool = False) -> List[Dict[str, Any]]:
         """Get recordings grouped by model with stats"""
         await self.initialize()
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            cursor = await db.execute("""
+            # When show_ts is False, only count recordings that have been converted (have mp4_path)
+            # or show all recordings when show_ts is True
+            if show_ts:
+                where_clause = ""
+            else:
+                where_clause = "WHERE is_converted = 1 OR mp4_path IS NOT NULL"
+            cursor = await db.execute(f"""
                 SELECT
                     username,
                     COUNT(*) as recording_count,
@@ -643,6 +649,7 @@ class Database:
                     MAX(created_at) as last_recording_at,
                     COALESCE(SUM(duration_seconds), 0) as total_duration
                 FROM recordings
+                {where_clause}
                 GROUP BY username
                 ORDER BY last_recording_at DESC
             """)
