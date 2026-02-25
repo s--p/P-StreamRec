@@ -201,56 +201,111 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # Route protégée pour les enregistrements
 @app.get("/streams/records/{username}/{filename}")
-async def serve_recording_protected(username: str, filename: str):
-    """Sert un enregistrement (TS ou MP4) avec vérification qu'il n'est pas en cours"""
-    from fastapi.responses import FileResponse
-    
+async def serve_recording_protected(request: Request, username: str, filename: str):
+    """Sert un enregistrement (TS ou MP4) avec support HTTP Range pour les gros fichiers"""
+    from fastapi.responses import StreamingResponse
+
     logger.api_request("GET", f"/streams/records/{username}/{filename}")
-    
+
     # Sécurité: vérifier le nom de fichier
     if ".." in filename or "/" in filename or not (filename.endswith(".ts") or filename.endswith(".mp4")):
         logger.warning("Tentative d'accès fichier invalide", username=username, filename=filename)
         raise HTTPException(status_code=400, detail="Nom de fichier invalide")
-    
+
     # Pour les fichiers TS, vérifier que ce n'est pas l'enregistrement en cours
     if filename.endswith(".ts"):
         today = datetime.now().strftime("%Y-%m-%d")
         recording_date = filename.replace(".ts", "")
-        
+
         # Vérifier si une session est active pour cet utilisateur
         active_sessions = manager.list_status()
         is_recording = any(s.get('person') == username and s.get('running') for s in active_sessions)
-        
+
         if is_recording and recording_date == today:
             logger.warning("Accès bloqué à enregistrement en cours", username=username, filename=filename, date=today)
             raise HTTPException(
-                status_code=403, 
+                status_code=403,
                 detail="Cet enregistrement est en cours. Regardez le live à la place."
             )
-    
+
     # Servir le fichier
     file_path = OUTPUT_DIR / "records" / username / filename
-    
+
     if not file_path.exists():
         logger.error("Fichier introuvable", username=username, filename=filename, path=str(file_path))
         raise HTTPException(status_code=404, detail="Enregistrement introuvable")
-    
+
     file_size = file_path.stat().st_size
     logger.file_operation("Lecture", str(file_path), size=file_size)
-    
+
     # Set correct media type based on file extension
     if filename.endswith(".mp4"):
         media_type = "video/mp4"
     else:
         media_type = "video/mp2t"
 
-    return FileResponse(
-        path=str(file_path),
+    # HTTP Range request support pour la lecture vidéo de gros fichiers
+    range_header = request.headers.get("range")
+
+    if range_header:
+        # Parse "bytes=start-end"
+        range_match = re.match(r"bytes=(\d+)-(\d*)", range_header)
+        if not range_match:
+            raise HTTPException(status_code=416, detail="Range Not Satisfiable")
+
+        start = int(range_match.group(1))
+        end = int(range_match.group(2)) if range_match.group(2) else file_size - 1
+
+        if start >= file_size or end >= file_size or start > end:
+            return Response(
+                status_code=416,
+                headers={"Content-Range": f"bytes */{file_size}"}
+            )
+
+        chunk_size = end - start + 1
+
+        async def range_file_stream():
+            with open(file_path, "rb") as f:
+                f.seek(start)
+                remaining = chunk_size
+                while remaining > 0:
+                    read_size = min(remaining, 64 * 1024)  # 64KB chunks
+                    data = f.read(read_size)
+                    if not data:
+                        break
+                    remaining -= len(data)
+                    yield data
+
+        return StreamingResponse(
+            range_file_stream(),
+            status_code=206,
+            media_type=media_type,
+            headers={
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+                "Content-Length": str(chunk_size),
+                "Accept-Ranges": "bytes",
+                "Content-Disposition": f'inline; filename="{filename}"',
+                "Cache-Control": "public, max-age=3600",
+            }
+        )
+
+    # Pas de Range header: servir le fichier complet
+    async def full_file_stream():
+        with open(file_path, "rb") as f:
+            while True:
+                data = f.read(64 * 1024)  # 64KB chunks
+                if not data:
+                    break
+                yield data
+
+    return StreamingResponse(
+        full_file_stream(),
         media_type=media_type,
         headers={
+            "Content-Length": str(file_size),
+            "Accept-Ranges": "bytes",
             "Content-Disposition": f'inline; filename="{filename}"',
             "Cache-Control": "public, max-age=3600",
-            "Accept-Ranges": "bytes"  # Important pour la lecture vidéo
         }
     )
 
