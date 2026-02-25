@@ -2563,12 +2563,16 @@ button {
 }
 
 .live-badge {
-  color: #ef4444;
-  font-size: 0.8rem;
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  z-index: 10;
+  color: #fff;
+  background: #ef4444;
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.05em;
-  padding: 0.2rem 0.6rem;
-  border: 1px solid #ef4444;
+  padding: 0.25rem 0.6rem;
   border-radius: 4px;
   user-select: none;
 }

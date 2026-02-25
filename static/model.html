@@ -650,11 +650,11 @@
           <span id="theaterText">Theater Mode</span>
         </button>
         <video id="player" class="video-player" muted autoplay></video>
+        <span class="live-badge">&#9679; LIVE</span>
         <div class="live-controls" id="liveControls">
           <button class="live-ctrl-btn" id="livePlayPauseBtn" onclick="liveTogglePlayPause()" title="Play/Pause">&#9646;&#9646;</button>
           <button class="live-ctrl-btn" id="liveMuteBtn" onclick="liveToggleMute()" title="Mute/Unmute">&#128263;</button>
           <input type="range" class="live-volume-slider" id="liveVolumeSlider" min="0" max="1" step="0.05" value="0.7" oninput="liveChangeVolume(this.value)" />
-          <span class="live-badge">&#9679; LIVE</span>
           <div class="live-ctrl-spacer"></div>
           <button class="live-ctrl-btn" id="liveFullscreenBtn" onclick="liveToggleFullscreen()" title="Fullscreen">&#x26F6;</button>
         </div>

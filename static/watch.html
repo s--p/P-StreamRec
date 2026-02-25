@@ -18,11 +18,11 @@
   <!-- Video Player (Theater Mode) -->
   <div class="watch-player-container">
     <video id="videoPlayer" class="watch-video" autoplay playsinline></video>
+    <span class="live-badge">&#9679; LIVE</span>
     <div class="live-controls" id="liveControls">
       <button class="live-ctrl-btn" id="playPauseBtn" onclick="togglePlayPause()" title="Play/Pause">&#9654;</button>
       <button class="live-ctrl-btn" id="muteBtn" onclick="toggleMute()" title="Mute/Unmute">&#128264;</button>
       <input type="range" class="live-volume-slider" id="volumeSlider" min="0" max="1" step="0.05" value="0.7" oninput="changeVolume(this.value)" />
-      <span class="live-badge">&#9679; LIVE</span>
       <div class="live-ctrl-spacer"></div>
       <button class="live-ctrl-btn" id="fullscreenBtn" onclick="toggleFullscreen()" title="Fullscreen">&#x26F6;</button>
     </div>
