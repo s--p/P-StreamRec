@@ -411,9 +411,27 @@ async def favicon():
 
 @app.get("/api/version")
 async def get_version():
-    """Retourne les informations de version"""
+    """Retourne les informations de version et configuration"""
     version = os.environ.get("APP_VERSION", "dev")
-    return {"version": version}
+    from app.core.config import AUTO_RECORD_INTERVAL
+    return {
+        "version": version,
+        "output_dir": str(OUTPUT_DIR),
+        "ffmpeg_path": FFMPEG_PATH,
+        "check_interval": AUTO_RECORD_INTERVAL,
+    }
+
+
+# ============================================
+# Logs Endpoints
+# ============================================
+
+@app.get("/api/logs")
+async def get_logs(level: Optional[str] = None, limit: int = 200, offset: int = 0):
+    """Retourne les logs de l'application depuis la mémoire"""
+    logs = logger.memory_handler.get_logs(level=level, limit=limit, offset=offset)
+    total = logger.memory_handler.get_total(level=level)
+    return {"logs": logs, "total": total}
 
 
 # ============================================
@@ -1843,14 +1861,21 @@ async def get_recordings_by_model(show_ts: bool = False):
     """Get recordings grouped by model with stats, including models with 0 recordings"""
     groups = await db.get_recordings_grouped_by_model(show_ts=show_ts)
 
+    # Build a lookup of auto_record status
+    all_models = await db.get_all_models()
+    auto_record_map = {m["username"]: bool(m.get("auto_record")) for m in all_models}
+
     # Build a set of usernames that have recordings
     usernames_with_recordings = set()
 
-    # Add thumbnail info for each model
+    # Only include models that have auto_record enabled (or are not tracked at all but have recordings)
     result = []
     for group in groups:
         username = group["username"]
         usernames_with_recordings.add(username)
+        # Skip models with auto_record explicitly disabled
+        if username in auto_record_map and not auto_record_map[username]:
+            continue
         thumb_url = f"/api/thumbnail/{username}"
         result.append({
             "username": username,
@@ -1859,14 +1884,13 @@ async def get_recordings_by_model(show_ts: bool = False):
             "lastRecordingAt": group["last_recording_at"],
             "totalDuration": group["total_duration"],
             "thumbnail": thumb_url,
-            "autoRecord": True,  # They have recordings, assume tracked
+            "autoRecord": auto_record_map.get(username, True),
         })
 
     # Also include tracked models (auto_record=1) that have 0 recordings
-    all_models = await db.get_all_models()
     for model in all_models:
         username = model["username"]
-        if username not in usernames_with_recordings:
+        if username not in usernames_with_recordings and model.get("auto_record"):
             result.append({
                 "username": username,
                 "recordingCount": 0,
@@ -1874,7 +1898,7 @@ async def get_recordings_by_model(show_ts: bool = False):
                 "lastRecordingAt": None,
                 "totalDuration": 0,
                 "thumbnail": f"/api/thumbnail/{username}",
-                "autoRecord": bool(model.get("auto_record", True)),
+                "autoRecord": True,
             })
 
     return {"models": result}

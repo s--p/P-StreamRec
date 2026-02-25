@@ -22,11 +22,17 @@ function initTabs() {
         loadSystemStats();
         statsLoaded = true;
       }
+      if (tabId === 'logs' && !logsLoaded) {
+        loadLogs();
+        logsLoaded = true;
+      }
     });
   });
 }
 
 var statsLoaded = false;
+var logsLoaded = false;
+var logsOffset = 0;
 var statsRefreshInterval = null;
 
 // ============================================
@@ -815,3 +821,84 @@ window.addEventListener('DOMContentLoaded', function() {
     }
   }, 10000);
 });
+
+// ============================================
+// Logs Viewer
+// ============================================
+
+function escapeLogHtml(str) {
+  var div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function loadLogs() {
+  logsOffset = 0;
+  var level = document.getElementById('logLevelFilter').value;
+  try {
+    var url = '/api/logs?limit=200&offset=0';
+    if (level) url += '&level=' + level;
+    var res = await fetch(url);
+    if (!res.ok) return;
+    var data = await res.json();
+    renderLogs(data.logs, false);
+    document.getElementById('logTotal').textContent = data.total;
+    logsOffset = data.logs.length;
+
+    // Load error/warning counts
+    var errRes = await fetch('/api/logs?level=ERROR&limit=1&offset=0');
+    var warnRes = await fetch('/api/logs?level=WARNING&limit=1&offset=0');
+    if (errRes.ok) {
+      var errData = await errRes.json();
+      document.getElementById('logErrors').textContent = errData.total;
+    }
+    if (warnRes.ok) {
+      var warnData = await warnRes.json();
+      document.getElementById('logWarnings').textContent = warnData.total;
+    }
+  } catch (e) {
+    console.error('Error loading logs:', e);
+  }
+}
+
+async function loadMoreLogs() {
+  var level = document.getElementById('logLevelFilter').value;
+  try {
+    var url = '/api/logs?limit=200&offset=' + logsOffset;
+    if (level) url += '&level=' + level;
+    var res = await fetch(url);
+    if (!res.ok) return;
+    var data = await res.json();
+    if (data.logs.length === 0) {
+      document.getElementById('loadMoreLogs').textContent = 'No more logs';
+      return;
+    }
+    renderLogs(data.logs, true);
+    logsOffset += data.logs.length;
+  } catch (e) {
+    console.error('Error loading more logs:', e);
+  }
+}
+
+function renderLogs(logs, append) {
+  var container = document.getElementById('logsContainer');
+  if (!append) container.innerHTML = '';
+
+  if (logs.length === 0 && !append) {
+    container.innerHTML = '<p style="color: var(--text-muted); padding: 2rem; text-align: center;">No logs found</p>';
+    return;
+  }
+
+  var html = logs.map(function(log) {
+    var time = log.timestamp.split(' ')[1] || log.timestamp;
+    return '<div class="log-entry">' +
+      '<span class="log-timestamp">' + escapeLogHtml(time) + '</span>' +
+      '<span class="log-level log-level-' + log.level + '">' + log.level + '</span>' +
+      '<span class="log-module">' + escapeLogHtml(log.module) + '</span>' +
+      '<span class="log-message">' + escapeLogHtml(log.message) + '</span>' +
+    '</div>';
+  }).join('');
+
+  container.insertAdjacentHTML('beforeend', html);
+  document.getElementById('loadMoreLogs').textContent = 'Load More';
+}

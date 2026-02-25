@@ -44,6 +44,10 @@
           <span class="settings-nav-icon">&#128202;</span>
           <span>Statistics</span>
         </button>
+        <button class="settings-nav-item" data-tab="logs">
+          <span class="settings-nav-icon">&#128220;</span>
+          <span>Logs</span>
+        </button>
       </nav>
 
       <!-- Tab Content -->
@@ -532,6 +536,40 @@
               </div>
             </div>
 
+          </div>
+        </div>
+
+        <!-- Logs Tab -->
+        <div class="settings-tab" id="tab-logs">
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <span class="icon">&#128220;</span>
+              <h3>Application Logs</h3>
+              <div style="margin-left: auto; display: flex; gap: 0.5rem; align-items: center;">
+                <select id="logLevelFilter" onchange="loadLogs()" style="padding: 0.4rem 0.75rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.8rem;">
+                  <option value="">All Levels</option>
+                  <option value="DEBUG">Debug</option>
+                  <option value="INFO">Info</option>
+                  <option value="WARNING">Warning</option>
+                  <option value="ERROR">Error</option>
+                  <option value="CRITICAL">Critical</option>
+                </select>
+                <button class="btn-secondary" onclick="loadLogs()" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;">Refresh</button>
+              </div>
+            </div>
+            <div class="settings-section-body" style="padding: 0;">
+              <div class="logs-stats" style="display: flex; gap: 1rem; padding: 0.75rem 1.25rem; border-bottom: 1px solid var(--border); font-size: 0.8rem; color: var(--text-muted);">
+                <span>Total: <strong id="logTotal" style="color: var(--text-primary);">-</strong></span>
+                <span>Errors: <strong id="logErrors" style="color: #ef4444;">-</strong></span>
+                <span>Warnings: <strong id="logWarnings" style="color: #f59e0b;">-</strong></span>
+              </div>
+              <div id="logsContainer" class="logs-container">
+                <p style="color: var(--text-muted); padding: 2rem; text-align: center;">Loading logs...</p>
+              </div>
+              <div style="padding: 0.75rem 1.25rem; border-top: 1px solid var(--border); display: flex; justify-content: center;">
+                <button class="btn-secondary" id="loadMoreLogs" onclick="loadMoreLogs()" style="padding: 0.4rem 1rem; font-size: 0.8rem;">Load More</button>
+              </div>
+            </div>
           </div>
         </div>
 

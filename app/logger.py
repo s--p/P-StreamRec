@@ -5,9 +5,10 @@ Fournit des logs détaillés, structurés et colorisés pour faciliter le debugg
 
 import logging
 import sys
+import collections
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 import json
 
 # Codes couleur ANSI
@@ -87,37 +88,84 @@ class DetailedFormatter(logging.Formatter):
         return log_line
 
 
+class MemoryLogHandler(logging.Handler):
+    """Handler qui stocke les logs en mémoire dans un deque circulaire"""
+
+    def __init__(self, max_entries: int = 2000):
+        super().__init__()
+        self.logs: collections.deque = collections.deque(maxlen=max_entries)
+
+    def emit(self, record):
+        # Strip ANSI color codes for stored logs
+        message = record.getMessage()
+        for code in ['\033[0m', '\033[1m', '\033[30m', '\033[31m', '\033[32m',
+                     '\033[33m', '\033[34m', '\033[35m', '\033[36m', '\033[37m',
+                     '\033[91m', '\033[92m', '\033[93m', '\033[94m', '\033[95m',
+                     '\033[96m', '\033[41m', '\033[42m', '\033[43m', '\033[44m']:
+            message = message.replace(code, '')
+
+        entry = {
+            "timestamp": datetime.fromtimestamp(record.created).strftime('%Y-%m-%d %H:%M:%S.%f')[:-3],
+            "level": record.levelname,
+            "module": record.name.split('.')[-1],
+            "message": message,
+        }
+        if hasattr(record, 'extra_data') and record.extra_data:
+            entry["extra"] = record.extra_data
+        self.logs.append(entry)
+
+    def get_logs(self, level: Optional[str] = None, limit: int = 200, offset: int = 0) -> List[Dict]:
+        """Récupère les logs filtrés"""
+        logs = list(self.logs)
+        if level:
+            level_upper = level.upper()
+            logs = [l for l in logs if l["level"] == level_upper]
+        # Return most recent first
+        logs.reverse()
+        return logs[offset:offset + limit]
+
+    def get_total(self, level: Optional[str] = None) -> int:
+        if level:
+            return sum(1 for l in self.logs if l["level"] == level.upper())
+        return len(self.logs)
+
+
 class AppLogger:
     """Logger principal de l'application"""
-    
+
     _instance = None
     _initialized = False
-    
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
-    
+
     def __init__(self):
         if self._initialized:
             return
-            
+
         # Configuration du logger principal
         self.logger = logging.getLogger('p-streamrec')
         self.logger.setLevel(logging.DEBUG)
         self.logger.propagate = False
-        
+
         # Handler console avec couleurs
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(logging.DEBUG)
         console_handler.setFormatter(DetailedFormatter())
-        
+
+        # Handler mémoire pour l'API
+        self.memory_handler = MemoryLogHandler(max_entries=2000)
+        self.memory_handler.setLevel(logging.DEBUG)
+
         # Nettoyer les handlers existants
         self.logger.handlers.clear()
         self.logger.addHandler(console_handler)
-        
+        self.logger.addHandler(self.memory_handler)
+
         self._initialized = True
-        
+
         # Log de démarrage
         self.startup()
     

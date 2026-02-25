@@ -3146,3 +3146,63 @@ button {
     margin-top: 0.5rem;
   }
 }
+
+/* ============================================
+   LOGS VIEWER
+   ============================================ */
+
+.logs-container {
+  max-height: 600px;
+  overflow-y: auto;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+}
+
+.log-entry {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.35rem 1.25rem;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  transition: background 0.15s;
+}
+
+.log-entry:hover {
+  background: rgba(255,255,255,0.03);
+}
+
+.log-timestamp {
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 80px;
+}
+
+.log-level {
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 60px;
+  text-align: center;
+  border-radius: 4px;
+  padding: 0 0.35rem;
+}
+
+.log-level-DEBUG { color: #67e8f9; }
+.log-level-INFO { color: #4ade80; }
+.log-level-WARNING { color: #fbbf24; background: rgba(251,191,36,0.1); }
+.log-level-ERROR { color: #f87171; background: rgba(248,113,113,0.1); }
+.log-level-CRITICAL { color: #fff; background: #dc2626; }
+
+.log-module {
+  color: #c084fc;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 100px;
+}
+
+.log-message {
+  color: var(--text-primary);
+  word-break: break-word;
+  flex: 1;
+}
