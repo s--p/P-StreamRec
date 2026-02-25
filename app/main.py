@@ -1342,7 +1342,7 @@ async def get_system_stats():
         "memory_vms": proc_mem.vms,
         "threads": process.num_threads(),
         "open_files": len(process.open_files()),
-        "connections": len(process.net_connections()),
+        "connections": len(process.connections()) if hasattr(process, 'connections') else len(process.net_connections()),
         "uptime_seconds": time.time() - process.create_time(),
     }
 

@@ -49,6 +49,7 @@ async def chaturbate_status():
         flaresolverr_available = await _flaresolverr.is_available()
 
     status["flaresolverrAvailable"] = flaresolverr_available
+    status["flaresolverrUrl"] = _flaresolverr.base_url if _flaresolverr else None
     return status
 
 

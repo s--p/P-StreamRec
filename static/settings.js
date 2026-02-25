@@ -173,6 +173,10 @@ async function checkFlareSolverr() {
         statusEl.className = 'status-indicator disconnected';
         statusEl.textContent = 'Not Available';
       }
+
+      if (data.flaresolverrUrl) {
+        urlEl.textContent = data.flaresolverrUrl;
+      }
     } else {
       statusEl.className = 'status-indicator unknown';
       statusEl.textContent = 'Unknown';
