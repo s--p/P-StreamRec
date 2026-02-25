@@ -1197,6 +1197,185 @@ async def delete_recording(username: str, filename: str):
 
 
 # ============================================
+# System Statistics Endpoint
+# ============================================
+
+@app.get("/api/system/stats")
+async def get_system_stats():
+    """Get comprehensive system statistics"""
+    import psutil
+    import shutil
+
+    # --- Disk Usage ---
+    output_path = str(OUTPUT_DIR)
+    disk = shutil.disk_usage(output_path)
+    disk_info = {
+        "total": disk.total,
+        "used": disk.used,
+        "free": disk.free,
+        "percent": round((disk.used / disk.total) * 100, 1),
+    }
+
+    # --- CPU ---
+    cpu_info = {
+        "cores_physical": psutil.cpu_count(logical=False) or 0,
+        "cores_logical": psutil.cpu_count(logical=True) or 0,
+        "usage_percent": psutil.cpu_percent(interval=0.5),
+        "per_core": psutil.cpu_percent(interval=0, percpu=True),
+        "frequency": None,
+    }
+    freq = psutil.cpu_freq()
+    if freq:
+        cpu_info["frequency"] = {
+            "current": round(freq.current, 0),
+            "max": round(freq.max, 0) if freq.max else None,
+        }
+
+    # --- RAM ---
+    mem = psutil.virtual_memory()
+    ram_info = {
+        "total": mem.total,
+        "used": mem.used,
+        "available": mem.available,
+        "percent": mem.percent,
+    }
+
+    # --- Current Process ---
+    process = psutil.Process()
+    proc_mem = process.memory_info()
+    process_info = {
+        "pid": process.pid,
+        "cpu_percent": process.cpu_percent(interval=0.1),
+        "memory_rss": proc_mem.rss,
+        "memory_vms": proc_mem.vms,
+        "threads": process.num_threads(),
+        "open_files": len(process.open_files()),
+        "connections": len(process.net_connections()),
+        "uptime_seconds": time.time() - process.create_time(),
+    }
+
+    # --- Child Processes (ffmpeg, etc.) ---
+    children = []
+    for child in process.children(recursive=True):
+        try:
+            child_mem = child.memory_info()
+            children.append({
+                "pid": child.pid,
+                "name": child.name(),
+                "cmdline": " ".join(child.cmdline()[:3]) if child.cmdline() else child.name(),
+                "cpu_percent": child.cpu_percent(interval=0),
+                "memory_rss": child_mem.rss,
+                "status": child.status(),
+            })
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    # --- Recording Storage Breakdown ---
+    records_dir = OUTPUT_DIR / "records"
+    storage_breakdown = {
+        "ts_files": {"count": 0, "size": 0},
+        "mp4_files": {"count": 0, "size": 0},
+        "other_files": {"count": 0, "size": 0},
+        "thumbnails": {"count": 0, "size": 0},
+        "total_recordings_size": 0,
+        "by_model": [],
+    }
+
+    if records_dir.exists():
+        model_stats = {}
+        for model_dir in records_dir.iterdir():
+            if not model_dir.is_dir():
+                continue
+            username = model_dir.name
+            model_stat = {"username": username, "ts_size": 0, "mp4_size": 0, "other_size": 0, "ts_count": 0, "mp4_count": 0}
+            for f in model_dir.iterdir():
+                if not f.is_file():
+                    continue
+                fsize = f.stat().st_size
+                ext = f.suffix.lower()
+                if ext == ".ts":
+                    storage_breakdown["ts_files"]["count"] += 1
+                    storage_breakdown["ts_files"]["size"] += fsize
+                    model_stat["ts_size"] += fsize
+                    model_stat["ts_count"] += 1
+                elif ext == ".mp4":
+                    storage_breakdown["mp4_files"]["count"] += 1
+                    storage_breakdown["mp4_files"]["size"] += fsize
+                    model_stat["mp4_size"] += fsize
+                    model_stat["mp4_count"] += 1
+                else:
+                    storage_breakdown["other_files"]["count"] += 1
+                    storage_breakdown["other_files"]["size"] += fsize
+                    model_stat["other_size"] += fsize
+            model_stat["total_size"] = model_stat["ts_size"] + model_stat["mp4_size"] + model_stat["other_size"]
+            model_stats[username] = model_stat
+
+        # Sort models by total size descending
+        storage_breakdown["by_model"] = sorted(model_stats.values(), key=lambda x: x["total_size"], reverse=True)[:20]
+        storage_breakdown["total_recordings_size"] = (
+            storage_breakdown["ts_files"]["size"]
+            + storage_breakdown["mp4_files"]["size"]
+            + storage_breakdown["other_files"]["size"]
+        )
+
+    # Thumbnails
+    thumbs_dir = OUTPUT_DIR / "thumbnails"
+    if thumbs_dir.exists():
+        for f in thumbs_dir.rglob("*"):
+            if f.is_file():
+                storage_breakdown["thumbnails"]["count"] += 1
+                storage_breakdown["thumbnails"]["size"] += f.stat().st_size
+
+    # --- Active Sessions ---
+    active_sessions = manager.list_status()
+    sessions_info = {
+        "active_count": sum(1 for s in active_sessions if s.get("running")),
+        "total_count": len(active_sessions),
+        "sessions": [],
+    }
+    for s in active_sessions:
+        if s.get("running"):
+            sessions_info["sessions"].append({
+                "person": s.get("person", "unknown"),
+                "duration_seconds": s.get("duration", 0),
+                "file_size": s.get("file_size", 0),
+            })
+
+    # --- Network I/O ---
+    net = psutil.net_io_counters()
+    network_info = {
+        "bytes_sent": net.bytes_sent,
+        "bytes_recv": net.bytes_recv,
+        "packets_sent": net.packets_sent,
+        "packets_recv": net.packets_recv,
+    }
+
+    # --- Disk I/O ---
+    try:
+        disk_io = psutil.disk_io_counters()
+        disk_io_info = {
+            "read_bytes": disk_io.read_bytes if disk_io else 0,
+            "write_bytes": disk_io.write_bytes if disk_io else 0,
+            "read_count": disk_io.read_count if disk_io else 0,
+            "write_count": disk_io.write_count if disk_io else 0,
+        }
+    except Exception:
+        disk_io_info = {"read_bytes": 0, "write_bytes": 0, "read_count": 0, "write_count": 0}
+
+    return {
+        "disk": disk_info,
+        "cpu": cpu_info,
+        "ram": ram_info,
+        "process": process_info,
+        "children": children,
+        "storage": storage_breakdown,
+        "sessions": sessions_info,
+        "network": network_info,
+        "disk_io": disk_io_info,
+    }
+
+
+# ============================================
 # Settings / Blacklisted Tags Endpoints
 # ============================================
 

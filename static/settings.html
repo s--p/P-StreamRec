@@ -17,162 +17,447 @@
   <div class="container">
     <h1 style="font-size: 1.75rem; font-weight: 700; color: var(--text-primary); margin-bottom: 2rem;">Settings</h1>
 
-    <div class="settings-grid">
-      <!-- Chaturbate Account Section -->
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <span class="icon">&#128100;</span>
-          <h3>Chaturbate Account</h3>
-        </div>
-        <div class="settings-section-body">
-          <div class="settings-row">
-            <span class="settings-row-label">Status</span>
-            <span class="status-indicator unknown" id="cbStatus">Checking...</span>
-          </div>
-          <div class="settings-row" id="cbUsernameRow" style="display: none;">
-            <span class="settings-row-label">Username</span>
-            <span class="settings-row-value" id="cbUsername">-</span>
-          </div>
+    <div class="settings-layout">
+      <!-- Sidebar Navigation -->
+      <nav class="settings-nav">
+        <button class="settings-nav-item active" data-tab="chaturbate">
+          <span class="settings-nav-icon">&#128100;</span>
+          <span>Chaturbate</span>
+        </button>
+        <button class="settings-nav-item" data-tab="flaresolverr">
+          <span class="settings-nav-icon">&#128737;</span>
+          <span>FlareSolverr</span>
+        </button>
+        <button class="settings-nav-item" data-tab="tags">
+          <span class="settings-nav-icon">&#127991;</span>
+          <span>Tags</span>
+        </button>
+        <button class="settings-nav-item" data-tab="recording">
+          <span class="settings-nav-icon">&#9881;</span>
+          <span>Recording</span>
+        </button>
+        <button class="settings-nav-item" data-tab="application">
+          <span class="settings-nav-icon">&#8505;</span>
+          <span>Application</span>
+        </button>
+        <button class="settings-nav-item" data-tab="statistics">
+          <span class="settings-nav-icon">&#128202;</span>
+          <span>Statistics</span>
+        </button>
+      </nav>
 
-          <!-- Login form -->
-          <div id="cbLoginForm" style="margin-top: 1.5rem; display: none;">
-            <form class="settings-form" onsubmit="loginChaturbate(event)">
-              <div class="form-group">
-                <label for="cbUser">Username</label>
-                <input type="text" id="cbUser" placeholder="Your Chaturbate username" required />
-              </div>
-              <div class="form-group">
-                <label for="cbPass">Password</label>
-                <input type="password" id="cbPass" placeholder="Your Chaturbate password" required />
-              </div>
-              <div class="settings-actions">
-                <button type="submit" class="btn-primary" id="cbLoginBtn">Log In</button>
-              </div>
-            </form>
-          </div>
+      <!-- Tab Content -->
+      <div class="settings-content">
 
-          <!-- Logged in actions -->
-          <div id="cbLoggedInActions" style="margin-top: 1rem; display: none;">
-            <button class="btn-secondary" onclick="logoutChaturbate()" style="font-size: 0.9rem; padding: 0.6rem 1.25rem;">Disconnect Account</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- FlareSolverr Section -->
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <span class="icon">&#128737;</span>
-          <h3>FlareSolverr</h3>
-        </div>
-        <div class="settings-section-body">
-          <div class="settings-row">
-            <span class="settings-row-label">Status</span>
-            <span class="status-indicator unknown" id="flareStatus">Checking...</span>
-          </div>
-          <div class="settings-row" id="flareVersionRow" style="display: none;">
-            <span class="settings-row-label">Version</span>
-            <span class="settings-row-value" id="flareVersion">-</span>
-          </div>
-          <div class="settings-row" id="flareUrlRow">
-            <span class="settings-row-label">URL</span>
-            <span class="settings-row-value" id="flareUrl" style="font-family: monospace; font-size: 0.85rem;">-</span>
-          </div>
-          <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-            FlareSolverr helps bypass Cloudflare protection when accessing Chaturbate.
-            It is configured via environment variables (FLARESOLVERR_URL).
-          </p>
-        </div>
-      </div>
-
-      <!-- Tag Blacklist Section -->
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <span class="icon">&#127991;</span>
-          <h3>Tag Blacklist</h3>
-        </div>
-        <div class="settings-section-body">
-          <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;">
-            Models with these tags will be hidden from the Discover page. Tags are case-insensitive.
-          </p>
-          <div class="blacklist-input-row">
-            <input type="text" id="blacklistInput" placeholder="Enter a tag to blacklist..." style="flex: 1; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem;" />
-            <button class="btn-primary" onclick="addBlacklistedTag()" style="padding: 0.6rem 1.25rem; font-size: 0.9rem;">Add</button>
-          </div>
-          <div class="blacklisted-tags-list" id="blacklistedTagsList" style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
-        </div>
-      </div>
-
-      <!-- Recording Settings Section -->
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <span class="icon">&#9881;</span>
-          <h3>Recording Settings</h3>
-        </div>
-        <div class="settings-section-body" id="recordingSettings">
-          <div class="settings-row">
-            <span class="settings-row-label">Output Directory</span>
-            <span class="settings-row-value" id="outputDir" style="font-family: monospace; font-size: 0.85rem;">-</span>
-          </div>
-          <div class="settings-row">
-            <span class="settings-row-label">FFmpeg Path</span>
-            <span class="settings-row-value" id="ffmpegPath" style="font-family: monospace; font-size: 0.85rem;">-</span>
-          </div>
-          <div class="settings-row">
-            <span class="settings-row-label">Check Interval</span>
-            <span class="settings-row-value" id="checkInterval">-</span>
-          </div>
-          <div class="settings-row">
-            <div>
-              <span class="settings-row-label">Auto Convert (TS &rarr; MP4)</span>
-              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Automatically convert .TS recordings to .MP4 after capture</p>
+        <!-- Chaturbate Tab -->
+        <div class="settings-tab active" id="tab-chaturbate">
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <span class="icon">&#128100;</span>
+              <h3>Chaturbate Account</h3>
             </div>
-            <label class="toggle-switch">
-              <input type="checkbox" id="autoConvertToggle" onchange="updateRecordingSetting('auto_convert', this.checked)" />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <div class="settings-row">
-            <div>
-              <span class="settings-row-label">Keep TS Files</span>
-              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Keep original .TS files after MP4 conversion instead of deleting them</p>
+            <div class="settings-section-body">
+              <div class="settings-row">
+                <span class="settings-row-label">Status</span>
+                <span class="status-indicator unknown" id="cbStatus">Checking...</span>
+              </div>
+              <div class="settings-row" id="cbUsernameRow" style="display: none;">
+                <span class="settings-row-label">Username</span>
+                <span class="settings-row-value" id="cbUsername">-</span>
+              </div>
+              <div id="cbLoginForm" style="margin-top: 1.5rem; display: none;">
+                <form class="settings-form" onsubmit="loginChaturbate(event)">
+                  <div class="form-group">
+                    <label for="cbUser">Username</label>
+                    <input type="text" id="cbUser" placeholder="Your Chaturbate username" required />
+                  </div>
+                  <div class="form-group">
+                    <label for="cbPass">Password</label>
+                    <input type="password" id="cbPass" placeholder="Your Chaturbate password" required />
+                  </div>
+                  <div class="settings-actions">
+                    <button type="submit" class="btn-primary" id="cbLoginBtn">Log In</button>
+                  </div>
+                </form>
+              </div>
+              <div id="cbLoggedInActions" style="margin-top: 1rem; display: none;">
+                <button class="btn-secondary" onclick="logoutChaturbate()" style="font-size: 0.9rem; padding: 0.6rem 1.25rem;">Disconnect Account</button>
+              </div>
             </div>
-            <label class="toggle-switch">
-              <input type="checkbox" id="keepTsToggle" onchange="updateRecordingSetting('keep_ts', this.checked)" />
-              <span class="toggle-slider"></span>
-            </label>
           </div>
-          <div class="settings-row">
-            <div>
-              <span class="settings-row-label">Show TS Files in Recordings</span>
-              <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Show raw .TS files in the Recordings page (only MP4 files are shown by default)</p>
-            </div>
-            <label class="toggle-switch">
-              <input type="checkbox" id="showTsToggle" onchange="updateRecordingSetting('show_ts_files', this.checked)" />
-              <span class="toggle-slider"></span>
-            </label>
-          </div>
-          <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
-            Changes take effect immediately without restart. Set a model's retention to 0 to keep recordings forever.
-          </p>
         </div>
-      </div>
 
-      <!-- App Info Section -->
-      <div class="settings-section">
-        <div class="settings-section-header">
-          <span class="icon">&#8505;</span>
-          <h3>Application</h3>
-        </div>
-        <div class="settings-section-body">
-          <div class="settings-row">
-            <span class="settings-row-label">Version</span>
-            <span class="settings-row-value" id="appVersionSetting">-</span>
+        <!-- FlareSolverr Tab -->
+        <div class="settings-tab" id="tab-flaresolverr">
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <span class="icon">&#128737;</span>
+              <h3>FlareSolverr</h3>
+            </div>
+            <div class="settings-section-body">
+              <div class="settings-row">
+                <span class="settings-row-label">Status</span>
+                <span class="status-indicator unknown" id="flareStatus">Checking...</span>
+              </div>
+              <div class="settings-row" id="flareVersionRow" style="display: none;">
+                <span class="settings-row-label">Version</span>
+                <span class="settings-row-value" id="flareVersion">-</span>
+              </div>
+              <div class="settings-row" id="flareUrlRow">
+                <span class="settings-row-label">URL</span>
+                <span class="settings-row-value" id="flareUrl" style="font-family: monospace; font-size: 0.85rem;">-</span>
+              </div>
+              <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+                FlareSolverr helps bypass Cloudflare protection when accessing Chaturbate.
+                It is configured via environment variables (FLARESOLVERR_URL).
+              </p>
+            </div>
           </div>
-          <div class="settings-row">
-            <span class="settings-row-label">API Status</span>
-            <span class="status-indicator connected" id="apiStatus">Connected</span>
+        </div>
+
+        <!-- Tags Tab -->
+        <div class="settings-tab" id="tab-tags">
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <span class="icon">&#127991;</span>
+              <h3>Tag Blacklist</h3>
+            </div>
+            <div class="settings-section-body">
+              <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1rem;">
+                Models with these tags will be hidden from the Discover page. Tags are case-insensitive.
+              </p>
+              <div class="blacklist-input-row">
+                <input type="text" id="blacklistInput" placeholder="Enter a tag to blacklist..." style="flex: 1; padding: 0.6rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary); font-size: 0.9rem;" />
+                <button class="btn-primary" onclick="addBlacklistedTag()" style="padding: 0.6rem 1.25rem; font-size: 0.9rem;">Add</button>
+              </div>
+              <div class="blacklisted-tags-list" id="blacklistedTagsList" style="margin-top: 1rem; display: flex; flex-wrap: wrap; gap: 0.5rem;"></div>
+            </div>
           </div>
         </div>
+
+        <!-- Recording Tab -->
+        <div class="settings-tab" id="tab-recording">
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <span class="icon">&#9881;</span>
+              <h3>Recording Settings</h3>
+            </div>
+            <div class="settings-section-body" id="recordingSettings">
+              <div class="settings-row">
+                <span class="settings-row-label">Output Directory</span>
+                <span class="settings-row-value" id="outputDir" style="font-family: monospace; font-size: 0.85rem;">-</span>
+              </div>
+              <div class="settings-row">
+                <span class="settings-row-label">FFmpeg Path</span>
+                <span class="settings-row-value" id="ffmpegPath" style="font-family: monospace; font-size: 0.85rem;">-</span>
+              </div>
+              <div class="settings-row">
+                <span class="settings-row-label">Check Interval</span>
+                <span class="settings-row-value" id="checkInterval">-</span>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <span class="settings-row-label">Auto Convert (TS &rarr; MP4)</span>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Automatically convert .TS recordings to .MP4 after capture</p>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="autoConvertToggle" onchange="updateRecordingSetting('auto_convert', this.checked)" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <span class="settings-row-label">Keep TS Files</span>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Keep original .TS files after MP4 conversion instead of deleting them</p>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="keepTsToggle" onchange="updateRecordingSetting('keep_ts', this.checked)" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="settings-row">
+                <div>
+                  <span class="settings-row-label">Show TS Files in Recordings</span>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Show raw .TS files in the Recordings page (only MP4 files are shown by default)</p>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="showTsToggle" onchange="updateRecordingSetting('show_ts_files', this.checked)" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
+                Changes take effect immediately without restart. Set a model's retention to 0 to keep recordings forever.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Application Tab -->
+        <div class="settings-tab" id="tab-application">
+          <div class="settings-section">
+            <div class="settings-section-header">
+              <span class="icon">&#8505;</span>
+              <h3>Application</h3>
+            </div>
+            <div class="settings-section-body">
+              <div class="settings-row">
+                <span class="settings-row-label">Version</span>
+                <span class="settings-row-value" id="appVersionSetting">-</span>
+              </div>
+              <div class="settings-row">
+                <span class="settings-row-label">API Status</span>
+                <span class="status-indicator connected" id="apiStatus">Connected</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Statistics Tab -->
+        <div class="settings-tab" id="tab-statistics">
+          <div class="stats-grid">
+
+            <!-- System Overview -->
+            <div class="stats-card stats-card-wide">
+              <div class="stats-card-header">
+                <h3>System Overview</h3>
+                <button class="stats-refresh-btn" onclick="loadSystemStats()" title="Refresh">&#8635;</button>
+              </div>
+              <div class="stats-card-body">
+                <div class="stats-overview-grid">
+                  <div class="stats-metric">
+                    <span class="stats-metric-label">Uptime</span>
+                    <span class="stats-metric-value" id="stat-uptime">-</span>
+                  </div>
+                  <div class="stats-metric">
+                    <span class="stats-metric-label">Process ID</span>
+                    <span class="stats-metric-value" id="stat-pid">-</span>
+                  </div>
+                  <div class="stats-metric">
+                    <span class="stats-metric-label">Threads</span>
+                    <span class="stats-metric-value" id="stat-threads">-</span>
+                  </div>
+                  <div class="stats-metric">
+                    <span class="stats-metric-label">Active Recordings</span>
+                    <span class="stats-metric-value" id="stat-active-rec">-</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Disk Usage -->
+            <div class="stats-card">
+              <div class="stats-card-header">
+                <h3>Disk Usage</h3>
+              </div>
+              <div class="stats-card-body">
+                <div class="stats-gauge-container">
+                  <svg class="stats-gauge" viewBox="0 0 120 120">
+                    <circle class="stats-gauge-bg" cx="60" cy="60" r="50" />
+                    <circle class="stats-gauge-fill" id="disk-gauge" cx="60" cy="60" r="50" />
+                    <text class="stats-gauge-text" x="60" y="55" id="disk-gauge-text">-%</text>
+                    <text class="stats-gauge-subtext" x="60" y="72" id="disk-gauge-sub">-</text>
+                  </svg>
+                </div>
+                <div class="stats-details">
+                  <div class="stats-detail-row">
+                    <span>Total</span>
+                    <span id="stat-disk-total">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Used</span>
+                    <span id="stat-disk-used">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Free</span>
+                    <span id="stat-disk-free">-</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- CPU -->
+            <div class="stats-card">
+              <div class="stats-card-header">
+                <h3>CPU</h3>
+              </div>
+              <div class="stats-card-body">
+                <div class="stats-gauge-container">
+                  <svg class="stats-gauge" viewBox="0 0 120 120">
+                    <circle class="stats-gauge-bg" cx="60" cy="60" r="50" />
+                    <circle class="stats-gauge-fill" id="cpu-gauge" cx="60" cy="60" r="50" />
+                    <text class="stats-gauge-text" x="60" y="55" id="cpu-gauge-text">-%</text>
+                    <text class="stats-gauge-subtext" x="60" y="72" id="cpu-gauge-sub">-</text>
+                  </svg>
+                </div>
+                <div class="stats-details">
+                  <div class="stats-detail-row">
+                    <span>Physical Cores</span>
+                    <span id="stat-cpu-physical">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Logical Cores</span>
+                    <span id="stat-cpu-logical">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Frequency</span>
+                    <span id="stat-cpu-freq">-</span>
+                  </div>
+                </div>
+                <div class="stats-cores" id="stat-cpu-cores"></div>
+              </div>
+            </div>
+
+            <!-- RAM -->
+            <div class="stats-card">
+              <div class="stats-card-header">
+                <h3>RAM</h3>
+              </div>
+              <div class="stats-card-body">
+                <div class="stats-gauge-container">
+                  <svg class="stats-gauge" viewBox="0 0 120 120">
+                    <circle class="stats-gauge-bg" cx="60" cy="60" r="50" />
+                    <circle class="stats-gauge-fill" id="ram-gauge" cx="60" cy="60" r="50" />
+                    <text class="stats-gauge-text" x="60" y="55" id="ram-gauge-text">-%</text>
+                    <text class="stats-gauge-subtext" x="60" y="72" id="ram-gauge-sub">-</text>
+                  </svg>
+                </div>
+                <div class="stats-details">
+                  <div class="stats-detail-row">
+                    <span>Total</span>
+                    <span id="stat-ram-total">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Used</span>
+                    <span id="stat-ram-used">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Available</span>
+                    <span id="stat-ram-available">-</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Storage Breakdown -->
+            <div class="stats-card stats-card-wide">
+              <div class="stats-card-header">
+                <h3>Storage Breakdown</h3>
+              </div>
+              <div class="stats-card-body">
+                <div class="stats-storage-bar-container">
+                  <div class="stats-storage-bar" id="storage-bar"></div>
+                </div>
+                <div class="stats-storage-legend" id="storage-legend"></div>
+                <div class="stats-details" style="margin-top: 1rem;">
+                  <div class="stats-detail-row">
+                    <span><span class="stats-dot" style="background: #6366f1;"></span> TS Files</span>
+                    <span id="stat-ts-info">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span><span class="stats-dot" style="background: #10b981;"></span> MP4 Files</span>
+                    <span id="stat-mp4-info">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span><span class="stats-dot" style="background: #f59e0b;"></span> Thumbnails</span>
+                    <span id="stat-thumb-info">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span><span class="stats-dot" style="background: #6b7280;"></span> Other</span>
+                    <span id="stat-other-info">-</span>
+                  </div>
+                  <div class="stats-detail-row" style="border-top: 1px solid var(--border); padding-top: 0.5rem; margin-top: 0.25rem; font-weight: 600;">
+                    <span>Total Recordings</span>
+                    <span id="stat-total-rec-size">-</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Process Resources -->
+            <div class="stats-card">
+              <div class="stats-card-header">
+                <h3>App Resources</h3>
+              </div>
+              <div class="stats-card-body">
+                <div class="stats-details">
+                  <div class="stats-detail-row">
+                    <span>App CPU</span>
+                    <span id="stat-proc-cpu">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>App Memory (RSS)</span>
+                    <span id="stat-proc-mem">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Virtual Memory</span>
+                    <span id="stat-proc-vms">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Open Files</span>
+                    <span id="stat-proc-files">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Connections</span>
+                    <span id="stat-proc-conn">-</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Network I/O -->
+            <div class="stats-card">
+              <div class="stats-card-header">
+                <h3>Network I/O</h3>
+              </div>
+              <div class="stats-card-body">
+                <div class="stats-details">
+                  <div class="stats-detail-row">
+                    <span>Data Received</span>
+                    <span id="stat-net-recv">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Data Sent</span>
+                    <span id="stat-net-sent">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Packets In</span>
+                    <span id="stat-net-pin">-</span>
+                  </div>
+                  <div class="stats-detail-row">
+                    <span>Packets Out</span>
+                    <span id="stat-net-pout">-</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Child Processes -->
+            <div class="stats-card stats-card-wide">
+              <div class="stats-card-header">
+                <h3>Active Processes</h3>
+              </div>
+              <div class="stats-card-body">
+                <div id="stats-children-list" class="stats-children-list">
+                  <p style="color: var(--text-muted); font-size: 0.85rem;">Loading...</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Top Models by Storage -->
+            <div class="stats-card stats-card-wide">
+              <div class="stats-card-header">
+                <h3>Top Models by Storage</h3>
+              </div>
+              <div class="stats-card-body">
+                <div id="stats-top-models" class="stats-top-models">
+                  <p style="color: var(--text-muted); font-size: 0.85rem;">Loading...</p>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
       </div>
     </div>
   </div>

@@ -3,6 +3,33 @@
 // ============================================
 
 // ============================================
+// Tab Navigation
+// ============================================
+function initTabs() {
+  var navItems = document.querySelectorAll('.settings-nav-item');
+  navItems.forEach(function(item) {
+    item.addEventListener('click', function() {
+      var tabId = this.getAttribute('data-tab');
+      // Deactivate all
+      navItems.forEach(function(n) { n.classList.remove('active'); });
+      document.querySelectorAll('.settings-tab').forEach(function(t) { t.classList.remove('active'); });
+      // Activate clicked
+      this.classList.add('active');
+      var tab = document.getElementById('tab-' + tabId);
+      if (tab) tab.classList.add('active');
+      // Load stats on first visit
+      if (tabId === 'statistics' && !statsLoaded) {
+        loadSystemStats();
+        statsLoaded = true;
+      }
+    });
+  });
+}
+
+var statsLoaded = false;
+var statsRefreshInterval = null;
+
+// ============================================
 // Check Chaturbate login status
 // ============================================
 async function checkChaturbateStatus() {
@@ -32,7 +59,6 @@ async function checkChaturbateStatus() {
         loggedInActions.style.display = 'none';
       }
     } else if (res.status === 404) {
-      // API endpoint does not exist
       statusEl.className = 'status-indicator unknown';
       statusEl.textContent = 'Not Available';
       loginForm.style.display = 'none';
@@ -83,10 +109,8 @@ async function loginChaturbate(event) {
     if (res.ok) {
       var data = await res.json();
       showNotification('Successfully connected to Chaturbate!', 'success');
-      // Clear form
       document.getElementById('cbUser').value = '';
       document.getElementById('cbPass').value = '';
-      // Refresh status
       await checkChaturbateStatus();
     } else {
       var err = {};
@@ -132,7 +156,6 @@ async function checkFlareSolverr() {
   var urlEl = document.getElementById('flareUrl');
 
   try {
-    // FlareSolverr status is included in the chaturbate status endpoint
     var res = await fetch('/api/chaturbate/status');
     if (res.ok) {
       var data = await res.json();
@@ -149,7 +172,6 @@ async function checkFlareSolverr() {
       statusEl.textContent = 'Unknown';
     }
   } catch (e) {
-    // FlareSolverr status check not available
     statusEl.className = 'status-indicator unknown';
     statusEl.textContent = 'Not Available';
   }
@@ -165,7 +187,6 @@ async function loadAppInfo() {
       var data = await res.json();
       document.getElementById('appVersionSetting').textContent = 'v' + (data.version || 'unknown');
 
-      // Populate config info if available
       if (data.output_dir || data.config) {
         var config = data.config || data;
         if (config.output_dir) document.getElementById('outputDir').textContent = config.output_dir;
@@ -214,7 +235,6 @@ async function updateRecordingSetting(key, value) {
       showNotification('Setting updated', 'success');
     } else {
       showNotification('Failed to update setting', 'error');
-      // Revert toggle
       loadRecordingSettings();
     }
   } catch (e) {
@@ -336,6 +356,233 @@ function escapeHtml(text) {
 }
 
 // ============================================
+// System Statistics
+// ============================================
+
+function formatBytes(bytes) {
+  if (bytes === 0 || bytes == null) return '0 B';
+  var units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  var i = Math.floor(Math.log(bytes) / Math.log(1024));
+  if (i >= units.length) i = units.length - 1;
+  return (bytes / Math.pow(1024, i)).toFixed(i > 1 ? 1 : 0) + ' ' + units[i];
+}
+
+function formatNumber(num) {
+  if (num == null) return '-';
+  return num.toLocaleString();
+}
+
+function formatUptime(seconds) {
+  if (!seconds) return '-';
+  var d = Math.floor(seconds / 86400);
+  var h = Math.floor((seconds % 86400) / 3600);
+  var m = Math.floor((seconds % 3600) / 60);
+  var parts = [];
+  if (d > 0) parts.push(d + 'd');
+  if (h > 0) parts.push(h + 'h');
+  parts.push(m + 'm');
+  return parts.join(' ');
+}
+
+function setGauge(id, percent, color) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  var circumference = 2 * Math.PI * 50; // r=50
+  var offset = circumference - (percent / 100) * circumference;
+  el.style.strokeDasharray = circumference;
+  el.style.strokeDashoffset = offset;
+  if (color) el.style.stroke = color;
+}
+
+function getGaugeColor(percent) {
+  if (percent < 50) return '#10b981';
+  if (percent < 75) return '#f59e0b';
+  return '#ef4444';
+}
+
+async function loadSystemStats() {
+  try {
+    var res = await fetch('/api/system/stats');
+    if (!res.ok) {
+      console.error('Failed to load stats:', res.status);
+      return;
+    }
+    var data = await res.json();
+    renderStats(data);
+  } catch (e) {
+    console.error('Error loading system stats:', e);
+  }
+}
+
+function renderStats(data) {
+  // --- System Overview ---
+  var el;
+  el = document.getElementById('stat-uptime');
+  if (el) el.textContent = formatUptime(data.process.uptime_seconds);
+  el = document.getElementById('stat-pid');
+  if (el) el.textContent = data.process.pid;
+  el = document.getElementById('stat-threads');
+  if (el) el.textContent = data.process.threads;
+  el = document.getElementById('stat-active-rec');
+  if (el) el.textContent = data.sessions.active_count;
+
+  // --- Disk ---
+  var diskPct = data.disk.percent;
+  setGauge('disk-gauge', diskPct, getGaugeColor(diskPct));
+  el = document.getElementById('disk-gauge-text');
+  if (el) el.textContent = diskPct + '%';
+  el = document.getElementById('disk-gauge-sub');
+  if (el) el.textContent = formatBytes(data.disk.free) + ' free';
+  el = document.getElementById('stat-disk-total');
+  if (el) el.textContent = formatBytes(data.disk.total);
+  el = document.getElementById('stat-disk-used');
+  if (el) el.textContent = formatBytes(data.disk.used);
+  el = document.getElementById('stat-disk-free');
+  if (el) el.textContent = formatBytes(data.disk.free);
+
+  // --- CPU ---
+  var cpuPct = data.cpu.usage_percent;
+  setGauge('cpu-gauge', cpuPct, getGaugeColor(cpuPct));
+  el = document.getElementById('cpu-gauge-text');
+  if (el) el.textContent = cpuPct.toFixed(1) + '%';
+  el = document.getElementById('cpu-gauge-sub');
+  if (el) el.textContent = (data.cpu.cores_logical || 0) + ' cores';
+  el = document.getElementById('stat-cpu-physical');
+  if (el) el.textContent = data.cpu.cores_physical || '-';
+  el = document.getElementById('stat-cpu-logical');
+  if (el) el.textContent = data.cpu.cores_logical || '-';
+  el = document.getElementById('stat-cpu-freq');
+  if (el) {
+    if (data.cpu.frequency && data.cpu.frequency.current) {
+      el.textContent = Math.round(data.cpu.frequency.current) + ' MHz';
+    } else {
+      el.textContent = '-';
+    }
+  }
+
+  // CPU cores visualization
+  var coresEl = document.getElementById('stat-cpu-cores');
+  if (coresEl && data.cpu.per_core) {
+    coresEl.innerHTML = data.cpu.per_core.map(function(pct, i) {
+      var bg = getGaugeColor(pct);
+      var alpha = Math.max(0.15, pct / 100);
+      return '<div class="stats-core" style="background: ' + bg + '; opacity: ' + (0.3 + alpha * 0.7).toFixed(2) + ';" title="Core ' + i + ': ' + pct.toFixed(0) + '%">' + pct.toFixed(0) + '</div>';
+    }).join('');
+  }
+
+  // --- RAM ---
+  var ramPct = data.ram.percent;
+  setGauge('ram-gauge', ramPct, getGaugeColor(ramPct));
+  el = document.getElementById('ram-gauge-text');
+  if (el) el.textContent = ramPct.toFixed(1) + '%';
+  el = document.getElementById('ram-gauge-sub');
+  if (el) el.textContent = formatBytes(data.ram.used) + ' used';
+  el = document.getElementById('stat-ram-total');
+  if (el) el.textContent = formatBytes(data.ram.total);
+  el = document.getElementById('stat-ram-used');
+  if (el) el.textContent = formatBytes(data.ram.used);
+  el = document.getElementById('stat-ram-available');
+  if (el) el.textContent = formatBytes(data.ram.available);
+
+  // --- Storage Breakdown ---
+  var storage = data.storage;
+  var totalStorage = storage.ts_files.size + storage.mp4_files.size + storage.thumbnails.size + storage.other_files.size;
+
+  // Storage bar
+  var barEl = document.getElementById('storage-bar');
+  if (barEl && totalStorage > 0) {
+    var segments = [
+      { size: storage.ts_files.size, color: '#6366f1', label: 'TS' },
+      { size: storage.mp4_files.size, color: '#10b981', label: 'MP4' },
+      { size: storage.thumbnails.size, color: '#f59e0b', label: 'Thumbs' },
+      { size: storage.other_files.size, color: '#6b7280', label: 'Other' },
+    ];
+    barEl.innerHTML = segments.map(function(s) {
+      var pct = (s.size / totalStorage * 100);
+      if (pct < 0.5) return '';
+      return '<div class="stats-storage-segment" style="width: ' + pct.toFixed(1) + '%; background: ' + s.color + ';" title="' + s.label + ': ' + formatBytes(s.size) + '"></div>';
+    }).join('');
+  } else if (barEl) {
+    barEl.innerHTML = '<div style="height:100%;width:100%;display:flex;align-items:center;justify-content:center;font-size:0.75rem;color:var(--text-muted);">No data</div>';
+  }
+
+  el = document.getElementById('stat-ts-info');
+  if (el) el.textContent = formatBytes(storage.ts_files.size) + ' (' + storage.ts_files.count + ' files)';
+  el = document.getElementById('stat-mp4-info');
+  if (el) el.textContent = formatBytes(storage.mp4_files.size) + ' (' + storage.mp4_files.count + ' files)';
+  el = document.getElementById('stat-thumb-info');
+  if (el) el.textContent = formatBytes(storage.thumbnails.size) + ' (' + storage.thumbnails.count + ' files)';
+  el = document.getElementById('stat-other-info');
+  if (el) el.textContent = formatBytes(storage.other_files.size) + ' (' + storage.other_files.count + ' files)';
+  el = document.getElementById('stat-total-rec-size');
+  if (el) el.textContent = formatBytes(storage.total_recordings_size);
+
+  // --- Process Resources ---
+  el = document.getElementById('stat-proc-cpu');
+  if (el) el.textContent = data.process.cpu_percent.toFixed(1) + '%';
+  el = document.getElementById('stat-proc-mem');
+  if (el) el.textContent = formatBytes(data.process.memory_rss);
+  el = document.getElementById('stat-proc-vms');
+  if (el) el.textContent = formatBytes(data.process.memory_vms);
+  el = document.getElementById('stat-proc-files');
+  if (el) el.textContent = data.process.open_files;
+  el = document.getElementById('stat-proc-conn');
+  if (el) el.textContent = data.process.connections;
+
+  // --- Network I/O ---
+  el = document.getElementById('stat-net-recv');
+  if (el) el.textContent = formatBytes(data.network.bytes_recv);
+  el = document.getElementById('stat-net-sent');
+  if (el) el.textContent = formatBytes(data.network.bytes_sent);
+  el = document.getElementById('stat-net-pin');
+  if (el) el.textContent = formatNumber(data.network.packets_recv);
+  el = document.getElementById('stat-net-pout');
+  if (el) el.textContent = formatNumber(data.network.packets_sent);
+
+  // --- Child Processes ---
+  var childrenEl = document.getElementById('stats-children-list');
+  if (childrenEl) {
+    if (data.children.length === 0) {
+      childrenEl.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0;">No active child processes (ffmpeg, etc.)</p>';
+    } else {
+      childrenEl.innerHTML = data.children.map(function(c) {
+        return '<div class="stats-child-item">' +
+          '<span class="stats-child-name" title="' + escapeHtml(c.cmdline) + '">' + escapeHtml(c.name) + ' <span style="color:var(--text-muted);font-size:0.75rem;">PID ' + c.pid + '</span></span>' +
+          '<div class="stats-child-meta">' +
+            '<span title="CPU">' + c.cpu_percent.toFixed(1) + '% CPU</span>' +
+            '<span title="Memory">' + formatBytes(c.memory_rss) + '</span>' +
+            '<span style="color:' + (c.status === 'running' ? 'var(--success)' : 'var(--text-muted)') + ';">' + c.status + '</span>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+  }
+
+  // --- Top Models by Storage ---
+  var topModelsEl = document.getElementById('stats-top-models');
+  if (topModelsEl) {
+    var models = storage.by_model || [];
+    if (models.length === 0) {
+      topModelsEl.innerHTML = '<p style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0;">No recording data yet</p>';
+    } else {
+      var maxSize = models[0].total_size || 1;
+      topModelsEl.innerHTML = models.map(function(m, i) {
+        var barPct = (m.total_size / maxSize * 100).toFixed(1);
+        return '<div class="stats-model-item">' +
+          '<span class="stats-model-rank">' + (i + 1) + '</span>' +
+          '<div class="stats-model-info">' +
+            '<div class="stats-model-name">' + escapeHtml(m.username) + '</div>' +
+            '<div class="stats-model-detail">' + m.ts_count + ' TS, ' + m.mp4_count + ' MP4</div>' +
+          '</div>' +
+          '<div class="stats-model-bar-bg"><div class="stats-model-bar-fill" style="width:' + barPct + '%;"></div></div>' +
+          '<span class="stats-model-size">' + formatBytes(m.total_size) + '</span>' +
+        '</div>';
+      }).join('');
+    }
+  }
+}
+
+// ============================================
 // Initialization
 // ============================================
 window.addEventListener('DOMContentLoaded', function() {
@@ -343,6 +590,9 @@ window.addEventListener('DOMContentLoaded', function() {
   var style = document.createElement('style');
   style.textContent = '@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }';
   document.head.appendChild(style);
+
+  // Initialize tab navigation
+  initTabs();
 
   // Load all data in parallel
   checkChaturbateStatus();
@@ -358,4 +608,12 @@ window.addEventListener('DOMContentLoaded', function() {
       if (e.key === 'Enter') addBlacklistedTag();
     });
   }
+
+  // Auto-refresh stats every 10 seconds when on stats tab
+  setInterval(function() {
+    var statsTab = document.getElementById('tab-statistics');
+    if (statsTab && statsTab.classList.contains('active')) {
+      loadSystemStats();
+    }
+  }, 10000);
 });

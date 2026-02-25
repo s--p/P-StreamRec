@@ -5,3 +5,4 @@ aiohttp==3.9.5
 pydantic==2.7.4
 aiosqlite==0.19.0
 bcrypt==4.1.2
+psutil==5.9.8
