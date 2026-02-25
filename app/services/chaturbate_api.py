@@ -371,61 +371,42 @@ class ChaturbateAPI:
             "num_followers": item.get("num_followers", 0),
         }
 
-    async def follow_model(self, username: str) -> bool:
-        """Follow a model on Chaturbate (requires auth)"""
+    async def _toggle_follow(self, username: str, action: str) -> bool:
+        """Follow or unfollow a model on Chaturbate (requires auth)"""
         if not self.auth.get_cookies().get("sessionid"):
-            logger.warning("Cannot follow: not logged in")
+            logger.warning(f"Cannot {action}: not logged in")
             return False
 
         try:
-            url = "https://chaturbate.com/follow/follow/"
+            url = f"https://chaturbate.com/follow/{action}/{username}/"
             headers = self._get_headers()
             headers["Content-Type"] = "application/x-www-form-urlencoded"
             headers["X-Requested-With"] = "XMLHttpRequest"
+            headers["Referer"] = f"https://chaturbate.com/{username}/"
 
             csrf = self.auth.get_cookies().get("csrftoken", "")
             if csrf:
                 headers["X-CSRFToken"] = csrf
 
-            data = f"room_slug={username}&follow=follow"
+            data = f"room_slug={username}"
             resp = await self._request("POST", url, headers=headers, data=data)
 
             if resp and resp.status == 200:
-                logger.info("Followed model on Chaturbate", username=username)
+                logger.info(f"{action.capitalize()}ed model on Chaturbate", username=username)
                 return True
-            logger.warning("Failed to follow model", username=username,
+            logger.warning(f"Failed to {action} model", username=username,
                           status=resp.status if resp else None)
         except Exception as e:
-            logger.error("Error following model", username=username, error=str(e))
+            logger.error(f"Error {action}ing model", username=username, error=str(e))
         return False
+
+    async def follow_model(self, username: str) -> bool:
+        """Follow a model on Chaturbate (requires auth)"""
+        return await self._toggle_follow(username, "follow")
 
     async def unfollow_model(self, username: str) -> bool:
         """Unfollow a model on Chaturbate (requires auth)"""
-        if not self.auth.get_cookies().get("sessionid"):
-            logger.warning("Cannot unfollow: not logged in")
-            return False
-
-        try:
-            url = "https://chaturbate.com/follow/unfollow/"
-            headers = self._get_headers()
-            headers["Content-Type"] = "application/x-www-form-urlencoded"
-            headers["X-Requested-With"] = "XMLHttpRequest"
-
-            csrf = self.auth.get_cookies().get("csrftoken", "")
-            if csrf:
-                headers["X-CSRFToken"] = csrf
-
-            data = f"room_slug={username}&follow=unfollow"
-            resp = await self._request("POST", url, headers=headers, data=data)
-
-            if resp and resp.status == 200:
-                logger.info("Unfollowed model on Chaturbate", username=username)
-                return True
-            logger.warning("Failed to unfollow model", username=username,
-                          status=resp.status if resp else None)
-        except Exception as e:
-            logger.error("Error unfollowing model", username=username, error=str(e))
-        return False
+        return await self._toggle_follow(username, "unfollow")
 
     async def is_following(self, username: str) -> bool:
         """Check if currently following a model on Chaturbate"""
@@ -437,7 +418,7 @@ class ChaturbateAPI:
             resp = await self._request("GET", url)
             if resp and resp.status == 200:
                 data = resp.json()
-                return data.get("is_following", False)
+                return data.get("following", False)
         except Exception as e:
             logger.debug("Error checking follow status", username=username, error=str(e))
         return False

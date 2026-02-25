@@ -213,7 +213,7 @@ function updateFollowButton() {
   if (isFollowing) {
     btn.classList.add('active');
     icon.innerHTML = '&#9829;';
-    text.textContent = 'Following';
+    text.textContent = 'Unfollow';
   } else {
     btn.classList.remove('active');
     icon.innerHTML = '&#9825;';
