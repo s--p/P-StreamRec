@@ -1574,7 +1574,7 @@ async def check_for_update():
 
 @app.post("/api/system/update")
 async def perform_system_update():
-    """Pull latest Docker image and recreate the container via Docker socket."""
+    """Pull latest Docker image and recreate the container via docker compose."""
     if not os.path.exists(DOCKER_SOCKET):
         return {
             "success": False,
@@ -1593,86 +1593,38 @@ async def perform_system_update():
         }
 
     try:
-        # 1. Pull the latest image
-        logger.info("Update: pulling latest image", image=f"{DOCKER_IMAGE}:latest")
-        status, pull_data = _docker_api(
-            'POST',
-            f'/images/create?fromImage={DOCKER_IMAGE}&tag=latest',
-            timeout=300,
-        )
-        if status not in (200, 201):
-            return {"success": False, "error": "pull_failed", "message": f"Failed to pull image (HTTP {status})"}
-
-        # 2. Inspect current container to extract its configuration
+        # 1. Inspect current container to get compose project info
         status, inspect_data = _docker_api('GET', f'/containers/{container_id}/json')
         if status != 200:
             return {"success": False, "error": "inspect_failed", "message": "Cannot inspect current container"}
 
         container_config = json.loads(inspect_data)
-        container_name = container_config.get("Name", "").lstrip("/") or "p-streamrec"
-        host_config = container_config.get("HostConfig", {})
-        config = container_config.get("Config", {})
+        labels = container_config.get("Config", {}).get("Labels", {})
 
-        # Build docker run arguments from the inspected config
-        run_args = [f"--name {container_name}"]
+        compose_working_dir = labels.get("com.docker.compose.project.working_dir", "")
+        compose_service = labels.get("com.docker.compose.service", "")
 
-        # Restart policy
-        restart = host_config.get("RestartPolicy", {})
-        if restart.get("Name"):
-            policy = restart["Name"]
-            if restart.get("MaximumRetryCount", 0) > 0:
-                policy += f":{restart['MaximumRetryCount']}"
-            run_args.append(f"--restart={policy}")
+        if not compose_working_dir or not compose_service:
+            return {
+                "success": False,
+                "error": "not_compose",
+                "message": "Container was not started via Docker Compose.",
+                "manual_commands": "docker compose pull && docker compose up -d",
+            }
 
-        # Environment variables
-        for env in config.get("Env", []):
-            env_escaped = env.replace("'", "'\\''")
-            run_args.append(f"-e '{env_escaped}'")
-
-        # Volume binds
-        for bind in host_config.get("Binds", []):
-            run_args.append(f"-v '{bind}'")
-
-        # Port mappings
-        port_bindings = host_config.get("PortBindings", {})
-        for container_port, host_ports in port_bindings.items():
-            if host_ports:
-                for hp in host_ports:
-                    host_ip = hp.get("HostIp", "")
-                    host_port = hp.get("HostPort", "")
-                    if host_ip:
-                        run_args.append(f"-p {host_ip}:{host_port}:{container_port}")
-                    else:
-                        run_args.append(f"-p {host_port}:{container_port}")
-
-        # Networks
-        networks = container_config.get("NetworkSettings", {}).get("Networks", {})
-        network_names = list(networks.keys())
-        network_flag = ""
-        if network_names:
-            network_flag = f"--network={network_names[0]}"
-
-        # Extra network connections (beyond the first)
-        network_cmds = ""
-        for net_name in network_names[1:]:
-            network_cmds += f"\ndocker network connect {net_name} {container_name}"
-
-        run_cmd = f"docker run -d {network_flag} {' '.join(run_args)} {DOCKER_IMAGE}:latest"
-
-        updater_script = (
-            f"sleep 3\n"
-            f"echo '[P-StreamRec Updater] Stopping old container...'\n"
-            f"docker stop {container_id}\n"
-            f"docker rm {container_id}\n"
-            f"echo '[P-StreamRec Updater] Starting new container...'\n"
-            f"{run_cmd}\n"
-            f"{network_cmds}\n"
-            f"echo '[P-StreamRec Updater] Update complete!'\n"
-        )
-
-        # 3. Pull docker:cli image for the updater container
+        # 2. Pull docker:cli image for the updater container
         logger.info("Update: pulling docker:cli for updater")
         _docker_api('POST', '/images/create?fromImage=docker&tag=cli', timeout=120)
+
+        # 3. Build updater script using docker compose (preserves the stack)
+        updater_script = (
+            f"sleep 2\n"
+            f"echo '[P-StreamRec Updater] Pulling latest image via compose...'\n"
+            f"docker compose -f /compose-project/docker-compose.yml pull {compose_service}\n"
+            f"echo '[P-StreamRec Updater] Recreating container via compose...'\n"
+            f"docker compose -f /compose-project/docker-compose.yml up -d --no-deps {compose_service}\n"
+            f"echo '[P-StreamRec Updater] Update complete!'\n"
+        )
 
         # 4. Create the updater container
         _docker_api('DELETE', '/containers/p-streamrec-updater?force=true')
@@ -1680,7 +1632,10 @@ async def perform_system_update():
             "Image": "docker:cli",
             "Cmd": ["sh", "-c", updater_script],
             "HostConfig": {
-                "Binds": ["/var/run/docker.sock:/var/run/docker.sock"],
+                "Binds": [
+                    "/var/run/docker.sock:/var/run/docker.sock",
+                    f"{compose_working_dir}:/compose-project",
+                ],
                 "AutoRemove": True,
             },
         }
@@ -1695,7 +1650,7 @@ async def perform_system_update():
 
         updater_id = json.loads(create_data).get("Id", "")
 
-        # 5. Start the updater — it will recreate our container in ~3 seconds
+        # 5. Start the updater — it will pull + recreate via compose in ~5 seconds
         status, _ = _docker_api('POST', f'/containers/{updater_id}/start')
         if status not in (200, 204):
             return {
@@ -1705,7 +1660,7 @@ async def perform_system_update():
                 "manual_commands": "docker compose pull && docker compose up -d",
             }
 
-        logger.info("Update: updater started, container will restart in ~5 seconds")
+        logger.info("Update: updater started, compose will recreate container in ~5 seconds")
         return {
             "success": True,
             "message": "Update in progress. The application will restart in a few seconds.",
