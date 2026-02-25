@@ -12,11 +12,7 @@ services:
     restart: unless-stopped
 
   p-streamrec:
-    # Utiliser l'image locale construite depuis le Dockerfile
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: p-streamrec:latest
+    image: ghcr.io/raccommode/p-streamrec:latest
     container_name: p-streamrec
     depends_on:
       - flaresolverr

@@ -661,50 +661,68 @@ async def api_stop(session_id: str):
 
 @app.get("/api/model/{username}/status")
 async def get_model_status(username: str):
-    """Récupère le statut et les infos d'un modèle depuis le cache SQLite"""
+    """Récupère le statut d'un modèle depuis le cache SQLite, avec fallback sur l'API Chaturbate"""
     # Lire directement depuis le cache SQLite (mis à jour par la tâche de monitoring)
     model = await db.get_model(username)
-    
-    if model:
+
+    if model and model.get('is_online'):
         return {
             "username": username,
-            "isOnline": bool(model.get('is_online')),
+            "isOnline": True,
             "thumbnail": f"/api/thumbnail/{username}",
             "viewers": model.get('viewers', 0)
         }
-    else:
-        # Modèle non trouvé dans le cache
-        return {
-            "username": username,
-            "isOnline": False,
-            "thumbnail": f"/api/thumbnail/{username}",
-            "viewers": 0
+
+    # Modèle non trouvé ou offline dans le cache: vérifier en direct via l'API Chaturbate
+    try:
+        import aiohttp
+        api_url = f"https://chaturbate.com/api/chatvideocontext/{username}/"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+            "Referer": "https://chaturbate.com/",
         }
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10), ssl=False) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    # Le modèle est en ligne si un des champs HLS est présent
+                    hls_fields = ['hls_source', 'hls_source_hd', 'hls_source_high', 'hls_source_720p', 'hls_source_1080p']
+                    is_online = any(data.get(f) for f in hls_fields)
+                    viewers = data.get('num_viewers', 0)
+                    if is_online:
+                        return {
+                            "username": username,
+                            "isOnline": True,
+                            "thumbnail": f"/api/thumbnail/{username}",
+                            "viewers": viewers
+                        }
+    except Exception as e:
+        logger.debug("Fallback API Chaturbate échoué pour status", username=username, error=str(e))
+
+    return {
+        "username": username,
+        "isOnline": model.get('is_online', False) if model else False,
+        "thumbnail": f"/api/thumbnail/{username}",
+        "viewers": model.get('viewers', 0) if model else 0
+    }
 
 
 @app.get("/api/model/{username}/stream")
 async def get_model_stream(username: str):
-    """Récupère l'URL du stream live pour un modèle (même sans enregistrement)"""
+    """Récupère l'URL du stream live pour un modèle (fonctionne même sans être dans le cache local)"""
     try:
-        # Vérifier si le modèle est en ligne
-        model = await db.get_model(username)
-        if not model or not model.get('is_online'):
-            raise HTTPException(status_code=404, detail=f"Modèle {username} n'est pas en ligne")
-        
-        # Résoudre l'URL du stream via Chaturbate
-        if not CB_RESOLVER_ENABLED:
-            raise HTTPException(status_code=400, detail="Chaturbate Resolver désactivé")
-
+        # Résoudre l'URL du stream directement via Chaturbate (pas de vérification cache)
         from .resolvers.chaturbate import resolve_m3u8_async
         try:
             m3u8_url = await resolve_m3u8_async(username)
         except Exception:
             from .resolvers.chaturbate import resolve_m3u8 as resolve_chaturbate
             m3u8_url = resolve_chaturbate(username)
-        
+
         if not m3u8_url:
             raise HTTPException(status_code=404, detail=f"Impossible de trouver le flux pour {username}")
-        
+
         return {
             "username": username,
             "streamUrl": m3u8_url,
