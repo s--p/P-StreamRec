@@ -9,16 +9,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=8080 \
     APP_VERSION=${APP_VERSION}
 
-# Install ffmpeg
+# Install ffmpeg and build dependencies for native packages (psutil on arm64)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg ca-certificates && \
+    apt-get install -y --no-install-recommends ffmpeg ca-certificates gcc python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 # Install dependencies
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    apt-get purge -y --auto-remove gcc python3-dev
 
 # Copy source
 COPY app ./app
