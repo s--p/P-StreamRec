@@ -1,11 +1,13 @@
 # syntax=docker/dockerfile:1
 FROM python:3.11-slim
 
+ARG APP_VERSION=dev
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     OUTPUT_DIR=/data \
-    PORT=8080
+    PORT=8080 \
+    APP_VERSION=${APP_VERSION}
 
 # Install ffmpeg
 RUN apt-get update && \
@@ -21,7 +23,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source
 COPY app ./app
 COPY static ./static
-COPY version.json ./
 COPY README.md ./
 
 # Create data volume for recordings

@@ -2,8 +2,8 @@ name: Build, Push & Release
 
 on:
   push:
-    tags:
-      - '*'
+    branches:
+      - main
 
 jobs:
   build-and-push:
@@ -15,6 +15,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute version (YEAR.WEEK.N)
+        id: version
+        run: |
+          YEAR=$(date -u +%Y)
+          WEEK=$(date -u +%V)
+          # Remove leading zero for clean version number
+          WEEK_NUM=$((10#$WEEK))
+          WEEK_PAD=$(printf "%02d" "$WEEK_NUM")
+
+          # Find existing releases for this year.week prefix
+          PREFIX="${YEAR}.${WEEK_PAD}"
+          LATEST=$(gh release list --limit 100 --json tagName -q \
+            "[.[] | select(.tagName | startswith(\"${PREFIX}.\"))] | length")
+
+          N=$(( LATEST + 1 ))
+          VERSION="${PREFIX}.${N}"
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Computed version: $VERSION"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -32,7 +56,7 @@ jobs:
         with:
           images: ghcr.io/raccommode/p-streamrec
           tags: |
-            type=ref,event=tag
+            type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest
 
       - name: Build and push
@@ -42,29 +66,14 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            APP_VERSION=${{ steps.version.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Generate release notes from version.json
-        id: notes
-        run: |
-          VERSION=$(jq -r '.version' version.json)
-          BODY=$(jq -r '.changelog | map("- " + .) | join("\n")' version.json)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          {
-            echo "body<<EOF"
-            echo "## Changelog"
-            echo ""
-            echo "$BODY"
-            echo ""
-            echo "---"
-            echo "Docker image: \`ghcr.io/raccommode/p-streamrec:${GITHUB_REF_NAME}\`"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ steps.notes.outputs.version }}
-          body: ${{ steps.notes.outputs.body }}
-          generate_release_notes: false
+          tag_name: ${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true

@@ -87,8 +87,7 @@ def check_structure():
         "app/ffmpeg_runner.py",
         "app/resolvers/chaturbate.py",
         "static/index.html",
-        "requirements.txt",
-        "version.json"
+        "requirements.txt"
     ]
     
     all_ok = True

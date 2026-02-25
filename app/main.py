@@ -345,16 +345,8 @@ async def favicon():
 @app.get("/api/version")
 async def get_version():
     """Retourne les informations de version"""
-    version_file = BASE_DIR / "version.json"
-    if version_file.exists():
-        try:
-            with open(version_file, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error("Erreur lecture version.json", error=str(e))
-    else:
-        logger.warning("Fichier version.json introuvable", path=str(version_file))
-    return {"version": "1.0.0", "releaseDate": "2025-10-05"}
+    version = os.environ.get("APP_VERSION", "dev")
+    return {"version": version}
 
 
 # ============================================
