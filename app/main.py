@@ -735,31 +735,37 @@ async def get_model_status(username: str):
         }
 
     # Modèle non trouvé ou offline dans le cache: vérifier en direct via l'API Chaturbate
-    try:
-        import aiohttp
-        api_url = f"https://chaturbate.com/api/chatvideocontext/{username}/"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept": "application/json",
-            "Referer": "https://chaturbate.com/",
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10), ssl=False) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    # Le modèle est en ligne si un des champs HLS est présent
-                    hls_fields = ['hls_source', 'hls_source_hd', 'hls_source_high', 'hls_source_720p', 'hls_source_1080p']
-                    is_online = any(data.get(f) for f in hls_fields)
-                    viewers = data.get('num_viewers', 0)
-                    if is_online:
-                        return {
-                            "username": username,
-                            "isOnline": True,
-                            "thumbnail": f"/api/thumbnail/{username}",
-                            "viewers": viewers
-                        }
-    except Exception as e:
-        logger.debug("Fallback API Chaturbate échoué pour status", username=username, error=str(e))
+    # Try up to 2 attempts with better headers
+    for attempt in range(2):
+        try:
+            import aiohttp
+            api_url = f"https://chaturbate.com/api/chatvideocontext/{username}/"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "application/json",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": f"https://chaturbate.com/{username}/",
+                "Origin": "https://chaturbate.com",
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=15), ssl=False) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        hls_fields = ['hls_source', 'hls_source_hd', 'hls_source_high', 'hls_source_720p', 'hls_source_1080p']
+                        is_online = any(data.get(f) for f in hls_fields)
+                        viewers = data.get('num_viewers', 0)
+                        if is_online:
+                            return {
+                                "username": username,
+                                "isOnline": True,
+                                "thumbnail": f"/api/thumbnail/{username}",
+                                "viewers": viewers
+                            }
+                        break  # Got a valid response, model is just offline
+        except Exception as e:
+            logger.debug("Fallback API Chaturbate échoué pour status", username=username, error=str(e), attempt=attempt + 1)
+            if attempt == 0:
+                await asyncio.sleep(1)  # Brief wait before retry
 
     return {
         "username": username,
@@ -945,6 +951,11 @@ async def list_recordings(username: str, show_ts: bool = False):
         else:
             size_display = f"{file_size / 1024 / 1024:.0f} MB"
 
+        # Use created_at from DB, fallback to file mtime
+        created_at = rec.get('created_at')
+        if not created_at:
+            created_at = int(stat.st_mtime)
+
         recordings.append({
             "recordingId": rec.get('recording_id', serve_path.stem),
             "filename": serve_path.name,
@@ -959,6 +970,7 @@ async def list_recordings(username: str, show_ts: bool = False):
             "duration": duration_seconds,
             "duration_str": duration_str,
             "isConverted": is_converted,
+            "createdAt": created_at,
             "mp4": {
                 "filename": Path(mp4_raw).name,
                 "size": rec.get('mp4_size', 0),
@@ -983,7 +995,8 @@ async def get_all_recordings(
     result = await db.get_all_recordings_paginated(
         page=page,
         limit=limit,
-        username_filter=username
+        username_filter=username,
+        show_ts=show_ts
     )
 
     recordings = []
@@ -1664,12 +1677,14 @@ async def set_blacklisted_tags(body: dict):
 
 @app.get("/api/settings/recording")
 async def get_recording_settings():
-    """Get recording settings (auto_convert, keep_ts, show_ts_files)"""
+    """Get recording settings (auto_convert, keep_ts, show_ts_files, auto_delete_watched, auto_delete_threshold)"""
     from .core.config import AUTO_CONVERT, KEEP_TS
 
     auto_convert_val = await db.get_setting("auto_convert")
     keep_ts_val = await db.get_setting("keep_ts")
     show_ts_val = await db.get_setting("show_ts_files")
+    auto_delete_val = await db.get_setting("auto_delete_watched")
+    auto_delete_threshold_val = await db.get_setting("auto_delete_threshold")
 
     # Fall back to env var defaults if not set in DB
     if auto_convert_val is not None:
@@ -1683,19 +1698,36 @@ async def get_recording_settings():
         keep_ts = KEEP_TS
 
     show_ts_files = show_ts_val is not None and show_ts_val.lower() in {"1", "true", "yes"}
+    auto_delete_watched = auto_delete_val is not None and auto_delete_val.lower() in {"1", "true", "yes"}
 
-    return {"auto_convert": auto_convert, "keep_ts": keep_ts, "show_ts_files": show_ts_files}
+    try:
+        auto_delete_threshold = int(auto_delete_threshold_val) if auto_delete_threshold_val is not None else 90
+    except (ValueError, TypeError):
+        auto_delete_threshold = 90
+
+    return {
+        "auto_convert": auto_convert,
+        "keep_ts": keep_ts,
+        "show_ts_files": show_ts_files,
+        "auto_delete_watched": auto_delete_watched,
+        "auto_delete_threshold": auto_delete_threshold,
+    }
 
 
 @app.put("/api/settings/recording")
 async def update_recording_settings(body: dict):
-    """Update recording settings (auto_convert, keep_ts, show_ts_files)"""
+    """Update recording settings (auto_convert, keep_ts, show_ts_files, auto_delete_watched, auto_delete_threshold)"""
     if "auto_convert" in body:
         await db.set_setting("auto_convert", str(body["auto_convert"]).lower())
     if "keep_ts" in body:
         await db.set_setting("keep_ts", str(body["keep_ts"]).lower())
     if "show_ts_files" in body:
         await db.set_setting("show_ts_files", str(body["show_ts_files"]).lower())
+    if "auto_delete_watched" in body:
+        await db.set_setting("auto_delete_watched", str(body["auto_delete_watched"]).lower())
+    if "auto_delete_threshold" in body:
+        threshold = max(0, min(100, int(body["auto_delete_threshold"])))
+        await db.set_setting("auto_delete_threshold", str(threshold))
 
     # Return current state
     return await get_recording_settings()
@@ -1779,12 +1811,27 @@ async def get_playback_position(recording_id: str):
 
 @app.post("/api/playback-position/{recording_id}")
 async def save_playback_position(recording_id: str, body: dict):
-    """Save playback position for a recording"""
+    """Save playback position for a recording. Auto-delete if threshold reached."""
     position = body.get("position", 0)
     duration = body.get("duration", 0)
     username = body.get("username", "")
     await db.save_playback_position(recording_id, username, position, duration)
-    return {"success": True}
+
+    # Check auto-delete
+    should_delete = False
+    if duration > 0 and position > 0:
+        auto_delete_val = await db.get_setting("auto_delete_watched")
+        if auto_delete_val and auto_delete_val.lower() in {"1", "true", "yes"}:
+            threshold_val = await db.get_setting("auto_delete_threshold")
+            try:
+                threshold = int(threshold_val) if threshold_val else 90
+            except (ValueError, TypeError):
+                threshold = 90
+            completion_pct = (position / duration) * 100
+            if completion_pct >= threshold:
+                should_delete = True
+
+    return {"success": True, "autoDelete": should_delete}
 
 
 # ============================================
@@ -1793,13 +1840,17 @@ async def save_playback_position(recording_id: str, body: dict):
 
 @app.get("/api/recordings-by-model")
 async def get_recordings_by_model(show_ts: bool = False):
-    """Get recordings grouped by model with stats"""
+    """Get recordings grouped by model with stats, including models with 0 recordings"""
     groups = await db.get_recordings_grouped_by_model(show_ts=show_ts)
+
+    # Build a set of usernames that have recordings
+    usernames_with_recordings = set()
 
     # Add thumbnail info for each model
     result = []
     for group in groups:
         username = group["username"]
+        usernames_with_recordings.add(username)
         thumb_url = f"/api/thumbnail/{username}"
         result.append({
             "username": username,
@@ -1808,7 +1859,23 @@ async def get_recordings_by_model(show_ts: bool = False):
             "lastRecordingAt": group["last_recording_at"],
             "totalDuration": group["total_duration"],
             "thumbnail": thumb_url,
+            "autoRecord": True,  # They have recordings, assume tracked
         })
+
+    # Also include tracked models (auto_record=1) that have 0 recordings
+    all_models = await db.get_all_models()
+    for model in all_models:
+        username = model["username"]
+        if username not in usernames_with_recordings:
+            result.append({
+                "username": username,
+                "recordingCount": 0,
+                "totalSize": 0,
+                "lastRecordingAt": None,
+                "totalDuration": 0,
+                "thumbnail": f"/api/thumbnail/{username}",
+                "autoRecord": bool(model.get("auto_record", True)),
+            })
 
     return {"models": result}
 

@@ -7,6 +7,9 @@ let allRecordings = {};
 let currentDetailUser = '';
 let currentPlayer = null;
 let showTsFiles = false;
+let currentPlayingRecordingId = '';
+let currentPlayingUsername = '';
+let currentPlayingFilename = '';
 
 // ============================================
 // Load recordings grouped by model
@@ -101,11 +104,16 @@ function renderModelGrid(models) {
   grid.innerHTML = models.map(function(model) {
     var thumbUrl = model.thumbnail || '/api/thumbnail/' + model.username;
 
+    var countLabel = model.recordingCount + ' rec';
+    if (model.recordingCount === 0) {
+      countLabel = 'No recordings';
+    }
+
     return '<div class="rec-model-card" onclick="showModelRecordings(\'' + escapeHtml(model.username) + '\')">' +
       '<div class="rec-model-card-thumb">' +
         '<img src="' + escapeHtml(thumbUrl) + '" alt="' + escapeHtml(model.username) + '" ' +
           'onerror="this.src=\'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22280%22 height=%22200%22%3E%3Crect fill=%22%231a1f3a%22 width=%22280%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%23a0aec0%22 font-family=%22system-ui%22 font-size=%2216%22%3E' + escapeHtml(model.username) + '%3C/text%3E%3C/svg%3E\'" loading="lazy" />' +
-        '<span class="rec-model-count">' + model.recordingCount + ' rec</span>' +
+        '<span class="rec-model-count">' + countLabel + '</span>' +
       '</div>' +
       '<div class="rec-model-card-info">' +
         '<span class="rec-model-username">' + escapeHtml(model.username) + '</span>' +
@@ -124,6 +132,9 @@ async function showModelRecordings(username) {
   document.getElementById('modelGrid').style.display = 'none';
   document.getElementById('recordingsDetail').style.display = 'block';
   document.getElementById('detailUsername').textContent = username;
+
+  // Load auto-record status for the detail toggle button
+  loadDetailRecordStatus(username);
 
   var list = document.getElementById('recordingsList');
   list.innerHTML = '<div class="empty-message"><div class="icon">&#9203;</div><p>Loading...</p></div>';
@@ -221,6 +232,11 @@ async function playRecording(username, filename, recordingId) {
   var video = document.getElementById('recordingPlayer');
   var title = document.getElementById('playerTitle');
 
+  // Track current playing recording for auto-delete
+  currentPlayingRecordingId = recordingId;
+  currentPlayingUsername = username;
+  currentPlayingFilename = filename;
+
   title.textContent = username + ' - ' + filename;
   modal.style.display = 'flex';
 
@@ -294,12 +310,30 @@ function savePosition(recordingId, username, position, duration) {
   }).catch(function(){});
 }
 
-function closePlayer() {
+async function closePlayer() {
   var modal = document.getElementById('playerModal');
   var video = document.getElementById('recordingPlayer');
 
-  // Save final position
-  var recordingId = ''; // We'd need to track this
+  // Save final position and check auto-delete
+  var shouldAutoDelete = false;
+  if (currentPlayingRecordingId && video.currentTime > 0 && video.duration > 0) {
+    try {
+      var res = await fetch('/api/playback-position/' + encodeURIComponent(currentPlayingRecordingId), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          position: video.currentTime,
+          duration: video.duration,
+          username: currentPlayingUsername
+        })
+      });
+      if (res.ok) {
+        var data = await res.json();
+        shouldAutoDelete = !!data.autoDelete;
+      }
+    } catch (e) {}
+  }
+
   video.pause();
 
   if (currentPlayer) {
@@ -316,6 +350,28 @@ function closePlayer() {
   if (interval) clearInterval(Number(interval));
 
   modal.style.display = 'none';
+
+  // Auto-delete if threshold was reached
+  if (shouldAutoDelete && currentPlayingUsername && currentPlayingFilename) {
+    showNotification('Auto-deleting watched recording...', 'success');
+    try {
+      var delRes = await fetch('/api/recordings/' + encodeURIComponent(currentPlayingUsername) + '/' + encodeURIComponent(currentPlayingFilename), {
+        method: 'DELETE'
+      });
+      if (delRes.ok) {
+        showNotification('Recording auto-deleted', 'success');
+      }
+    } catch (e) {}
+    // Refresh view
+    if (currentDetailUser) {
+      showModelRecordings(currentDetailUser);
+    }
+  }
+
+  // Reset tracking
+  currentPlayingRecordingId = '';
+  currentPlayingUsername = '';
+  currentPlayingFilename = '';
 }
 
 // ============================================
@@ -361,6 +417,97 @@ async function deleteRecording(username, filename, btn) {
     showNotification('Connection error', 'error');
     btn.disabled = false;
     btn.innerHTML = '&#128465;';
+  }
+}
+
+// ============================================
+// Toggle auto-record from detail view
+// ============================================
+async function toggleDetailAutoRecord() {
+  if (!currentDetailUser) return;
+
+  var btn = document.getElementById('detailRecordBtn');
+  btn.disabled = true;
+
+  try {
+    // Check if model is tracked
+    var modelsRes = await fetch('/api/models');
+    var modelsData = modelsRes.ok ? await modelsRes.json() : { models: [] };
+    var found = null;
+    for (var i = 0; i < (modelsData.models || []).length; i++) {
+      if (modelsData.models[i].username === currentDetailUser) {
+        found = modelsData.models[i];
+        break;
+      }
+    }
+
+    if (!found) {
+      // Not tracked yet - add model with auto-record on
+      var addRes = await fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: currentDetailUser, autoRecord: true, recordQuality: 'best', retentionDays: 30 })
+      });
+      if (addRes.ok || addRes.status === 409) {
+        updateDetailRecordButton(true);
+        showNotification('Auto-record enabled for ' + currentDetailUser, 'success');
+      } else {
+        showNotification('Failed to enable auto-record', 'error');
+      }
+    } else {
+      // Toggle existing
+      var newValue = !found.autoRecord;
+      var res = await fetch('/api/models/' + encodeURIComponent(currentDetailUser) + '/auto-record', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ autoRecord: newValue })
+      });
+      if (res.ok) {
+        updateDetailRecordButton(newValue);
+        showNotification(newValue ? 'Auto-record enabled' : 'Auto-record disabled', 'success');
+      } else {
+        showNotification('Failed to toggle auto-record', 'error');
+      }
+    }
+  } catch (e) {
+    console.error('Error toggling auto-record:', e);
+    showNotification('Connection error', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function updateDetailRecordButton(isActive) {
+  var btn = document.getElementById('detailRecordBtn');
+  var icon = document.getElementById('detailRecordIcon');
+  var text = document.getElementById('detailRecordText');
+
+  if (isActive) {
+    btn.classList.add('active');
+    icon.innerHTML = '&#9679;';
+    text.textContent = 'Recording On';
+  } else {
+    btn.classList.remove('active');
+    icon.innerHTML = '&#9675;';
+    text.textContent = 'Auto-Record';
+  }
+}
+
+async function loadDetailRecordStatus(username) {
+  try {
+    var res = await fetch('/api/models');
+    if (!res.ok) return;
+    var data = await res.json();
+    var found = null;
+    for (var i = 0; i < (data.models || []).length; i++) {
+      if (data.models[i].username === username) {
+        found = data.models[i];
+        break;
+      }
+    }
+    updateDetailRecordButton(found ? found.autoRecord : false);
+  } catch (e) {
+    console.error('Error loading record status:', e);
   }
 }
 

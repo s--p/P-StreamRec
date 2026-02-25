@@ -69,6 +69,20 @@ async function loadModelStatus() {
         startStream();
       }
     } else {
+      // Status says offline, but try loading the stream anyway
+      // The status API can return false negatives (rate limiting, cache miss)
+      if (!hlsPlayer) {
+        var streamLoaded = await tryLoadStream();
+        if (streamLoaded) {
+          statusDot.className = 'status-dot online';
+          statusText.textContent = 'Live';
+          viewerCount.style.display = 'inline';
+          viewerNum.textContent = Number(data.viewers || 0).toLocaleString();
+          offlineOverlay.style.display = 'none';
+          return;
+        }
+      }
+
       statusDot.className = 'status-dot offline';
       statusText.textContent = 'Offline';
       viewerCount.style.display = 'none';
@@ -82,6 +96,24 @@ async function loadModelStatus() {
     }
   } catch (e) {
     console.error('Error loading model status:', e);
+  }
+}
+
+// ============================================
+// Try loading stream (returns true if successful)
+// ============================================
+async function tryLoadStream() {
+  try {
+    var res = await fetch('/api/model/' + currentUsername + '/stream');
+    if (!res.ok) return false;
+    var data = await res.json();
+    if (!data.streamUrl) return false;
+
+    // Stream URL is available - start playing
+    startStreamWithUrl(data.streamUrl);
+    return true;
+  } catch (e) {
+    return false;
   }
 }
 
@@ -103,35 +135,57 @@ async function startStream() {
       return;
     }
 
-    var video = document.getElementById('videoPlayer');
-
-    if (Hls.isSupported()) {
-      hlsPlayer = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        backBufferLength: 90,
-      });
-      hlsPlayer.loadSource(streamUrl);
-      hlsPlayer.attachMedia(video);
-      hlsPlayer.on(Hls.Events.MANIFEST_PARSED, function() {
-        video.play().catch(function() {});
-      });
-      hlsPlayer.on(Hls.Events.ERROR, function(event, data) {
-        if (data.fatal) {
-          console.error('HLS fatal error:', data.type);
-          hlsPlayer.destroy();
-          hlsPlayer = null;
-        }
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS
-      video.src = streamUrl;
-      video.addEventListener('loadedmetadata', function() {
-        video.play().catch(function() {});
-      });
-    }
+    startStreamWithUrl(streamUrl);
   } catch (e) {
     console.error('Error starting stream:', e);
+  }
+}
+
+function startStreamWithUrl(streamUrl) {
+  var video = document.getElementById('videoPlayer');
+
+  if (Hls.isSupported()) {
+    hlsPlayer = new Hls({
+      enableWorker: true,
+      lowLatencyMode: true,
+      backBufferLength: 90,
+    });
+    hlsPlayer.loadSource(streamUrl);
+    hlsPlayer.attachMedia(video);
+    hlsPlayer.on(Hls.Events.MANIFEST_PARSED, function() {
+      video.play().catch(function() {});
+    });
+    hlsPlayer.on(Hls.Events.ERROR, function(event, data) {
+      if (data.fatal) {
+        console.error('HLS fatal error:', data.type);
+        hlsPlayer.destroy();
+        hlsPlayer = null;
+      }
+    });
+  } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    // Safari native HLS
+    video.src = streamUrl;
+    video.addEventListener('loadedmetadata', function() {
+      video.play().catch(function() {});
+    });
+  }
+}
+
+// ============================================
+// Retry loading stream (called from retry button)
+// ============================================
+async function retryStream() {
+  var retryBtn = document.getElementById('retryBtn');
+  if (retryBtn) {
+    retryBtn.disabled = true;
+    retryBtn.textContent = 'Retrying...';
+  }
+
+  await loadModelStatus();
+
+  if (retryBtn) {
+    retryBtn.disabled = false;
+    retryBtn.textContent = 'Retry';
   }
 }
 

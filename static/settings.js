@@ -213,9 +213,23 @@ async function loadRecordingSettings() {
       var autoConvertToggle = document.getElementById('autoConvertToggle');
       var keepTsToggle = document.getElementById('keepTsToggle');
       var showTsToggle = document.getElementById('showTsToggle');
+      var autoDeleteToggle = document.getElementById('autoDeleteToggle');
+      var autoDeleteThreshold = document.getElementById('autoDeleteThreshold');
+      var thresholdRow = document.getElementById('autoDeleteThresholdRow');
+      var thresholdValue = document.getElementById('thresholdValue');
+
       if (autoConvertToggle) autoConvertToggle.checked = !!data.auto_convert;
       if (keepTsToggle) keepTsToggle.checked = !!data.keep_ts;
       if (showTsToggle) showTsToggle.checked = !!data.show_ts_files;
+      if (autoDeleteToggle) {
+        autoDeleteToggle.checked = !!data.auto_delete_watched;
+        if (thresholdRow) thresholdRow.style.display = data.auto_delete_watched ? 'flex' : 'none';
+      }
+      if (autoDeleteThreshold) {
+        var thresh = data.auto_delete_threshold || 90;
+        autoDeleteThreshold.value = thresh;
+        if (thresholdValue) thresholdValue.textContent = thresh + '%';
+      }
     }
   } catch (e) {
     console.error('Error loading recording settings:', e);
@@ -233,6 +247,11 @@ async function updateRecordingSetting(key, value) {
     });
     if (res.ok) {
       showNotification('Setting updated', 'success');
+      // Toggle threshold row visibility when auto_delete_watched changes
+      if (key === 'auto_delete_watched') {
+        var thresholdRow = document.getElementById('autoDeleteThresholdRow');
+        if (thresholdRow) thresholdRow.style.display = value ? 'flex' : 'none';
+      }
     } else {
       showNotification('Failed to update setting', 'error');
       loadRecordingSettings();

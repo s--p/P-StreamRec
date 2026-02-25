@@ -471,7 +471,8 @@ class Database:
         self,
         page: int = 1,
         limit: int = 20,
-        username_filter: Optional[str] = None
+        username_filter: Optional[str] = None,
+        show_ts: bool = False
     ) -> Dict[str, Any]:
         """Get all recordings with pagination"""
         await self.initialize()
@@ -479,41 +480,39 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
 
-            # Count total
-            count_sql = "SELECT COUNT(*) FROM recordings WHERE 1=1"
-            count_params = []
+            # Base filter: when show_ts=False, only count converted recordings
+            where_clauses = ["1=1"]
+            where_params = []
+            if not show_ts:
+                where_clauses.append("(is_converted = 1 OR mp4_path IS NOT NULL)")
             if username_filter:
-                count_sql += " AND username = ?"
-                count_params.append(username_filter)
+                where_clauses.append("username = ?")
+                where_params.append(username_filter)
 
-            cursor = await db.execute(count_sql, count_params)
+            where_sql = " AND ".join(where_clauses)
+
+            # Count total
+            count_sql = f"SELECT COUNT(*) FROM recordings WHERE {where_sql}"
+            cursor = await db.execute(count_sql, where_params)
             row = await cursor.fetchone()
             total = row[0] if row else 0
 
             # Fetch page
             offset = (page - 1) * limit
-            query_sql = """
-                SELECT * FROM recordings
-                WHERE 1=1
-            """
-            query_params = []
-            if username_filter:
-                query_sql += " AND username = ?"
-                query_params.append(username_filter)
-            query_sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-            query_params.extend([limit, offset])
+            query_sql = f"SELECT * FROM recordings WHERE {where_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?"
+            query_params = list(where_params) + [limit, offset]
 
             cursor = await db.execute(query_sql, query_params)
             rows = await cursor.fetchall()
 
-            # Total size
-            size_sql = "SELECT COALESCE(SUM(COALESCE(mp4_size, file_size)), 0) FROM recordings"
-            size_params = []
-            if username_filter:
-                size_sql = "SELECT COALESCE(SUM(COALESCE(mp4_size, file_size)), 0) FROM recordings WHERE username = ?"
-                size_params.append(username_filter)
+            # Total size - respects show_ts filter
+            if show_ts:
+                size_sql = f"SELECT COALESCE(SUM(COALESCE(mp4_size, file_size)), 0) FROM recordings WHERE {where_sql}"
+            else:
+                # When not showing TS, only sum MP4 sizes for converted, or file_size for those with mp4_path
+                size_sql = f"SELECT COALESCE(SUM(COALESCE(mp4_size, file_size)), 0) FROM recordings WHERE {where_sql}"
 
-            cursor = await db.execute(size_sql, size_params)
+            cursor = await db.execute(size_sql, where_params)
             size_row = await cursor.fetchone()
             total_size = size_row[0] if size_row else 0
 

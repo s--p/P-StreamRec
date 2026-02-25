@@ -185,6 +185,26 @@
                   <span class="toggle-slider"></span>
                 </label>
               </div>
+              <div class="settings-row" style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.5rem;">
+                <div>
+                  <span class="settings-row-label">Auto-Delete After Watching</span>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Automatically delete recordings after you've watched them past the threshold</p>
+                </div>
+                <label class="toggle-switch">
+                  <input type="checkbox" id="autoDeleteToggle" onchange="updateRecordingSetting('auto_delete_watched', this.checked)" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <div class="settings-row" id="autoDeleteThresholdRow" style="display: none;">
+                <div>
+                  <span class="settings-row-label">Completion Threshold</span>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">Delete when watched past this percentage</p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.75rem;">
+                  <input type="range" id="autoDeleteThreshold" min="50" max="100" value="90" style="width: 120px; accent-color: var(--accent);" oninput="document.getElementById('thresholdValue').textContent = this.value + '%'" onchange="updateRecordingSetting('auto_delete_threshold', parseInt(this.value))" />
+                  <span id="thresholdValue" style="font-size: 0.9rem; font-weight: 600; color: var(--text-primary); min-width: 3rem;">90%</span>
+                </div>
+              </div>
               <p style="margin-top: 1rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.5;">
                 Changes take effect immediately without restart. Set a model's retention to 0 to keep recordings forever.
               </p>
