@@ -583,6 +583,185 @@ function renderStats(data) {
 }
 
 // ============================================
+// Update System
+// ============================================
+
+var lastUpdateData = null;
+
+async function checkForUpdate() {
+  var btn = document.getElementById('check-update-btn');
+  var statusEl = document.getElementById('update-check-status');
+  var latestRow = document.getElementById('update-latest-row');
+  var latestEl = document.getElementById('update-latest-version');
+  var publishedRow = document.getElementById('update-published-row');
+  var publishedEl = document.getElementById('update-published-at');
+  var applyBtn = document.getElementById('apply-update-btn');
+  var notesContainer = document.getElementById('update-release-notes');
+  var notesContent = document.getElementById('update-notes-content');
+  var manualEl = document.getElementById('update-manual-commands');
+
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+  statusEl.className = 'status-indicator unknown';
+  statusEl.textContent = 'Checking...';
+  applyBtn.style.display = 'none';
+  notesContainer.style.display = 'none';
+  manualEl.style.display = 'none';
+
+  try {
+    var res = await fetch('/api/system/check-update');
+    if (!res.ok) {
+      statusEl.className = 'status-indicator disconnected';
+      statusEl.textContent = 'Error';
+      showNotification('Failed to check for updates', 'error');
+      return;
+    }
+
+    var data = await res.json();
+    lastUpdateData = data;
+
+    if (data.error && !data.latest_version) {
+      statusEl.className = 'status-indicator disconnected';
+      statusEl.textContent = 'Error';
+      showNotification('Update check failed: ' + data.error, 'error');
+      return;
+    }
+
+    // Show latest version
+    latestRow.style.display = 'flex';
+    latestEl.textContent = 'v' + (data.latest_version || 'unknown');
+
+    if (data.published_at) {
+      publishedRow.style.display = 'flex';
+      var date = new Date(data.published_at);
+      publishedEl.textContent = date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    }
+
+    if (data.update_available) {
+      statusEl.className = 'status-indicator unknown';
+      statusEl.textContent = 'Update available';
+      applyBtn.style.display = 'inline-flex';
+
+      if (data.release_notes) {
+        notesContainer.style.display = 'block';
+        notesContent.textContent = data.release_notes;
+      }
+
+      showNotification('Update available: v' + data.latest_version, 'success');
+    } else {
+      statusEl.className = 'status-indicator connected';
+      statusEl.textContent = 'Up to date';
+      showNotification('You are running the latest version', 'success');
+    }
+  } catch (e) {
+    console.error('Error checking for updates:', e);
+    statusEl.className = 'status-indicator disconnected';
+    statusEl.textContent = 'Error';
+    showNotification('Connection error', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Check for Updates';
+  }
+}
+
+async function applyUpdate() {
+  var applyBtn = document.getElementById('apply-update-btn');
+  var progressEl = document.getElementById('update-progress');
+  var progressBar = document.getElementById('update-progress-bar');
+  var progressText = document.getElementById('update-progress-text');
+  var manualEl = document.getElementById('update-manual-commands');
+  var commandsText = document.getElementById('update-commands-text');
+
+  if (!confirm('Update to the latest version? The application will restart.')) return;
+
+  applyBtn.disabled = true;
+  applyBtn.textContent = 'Updating...';
+  progressEl.style.display = 'block';
+  progressBar.style.width = '10%';
+  progressText.textContent = 'Pulling latest image...';
+
+  try {
+    progressBar.style.width = '30%';
+    var res = await fetch('/api/system/update', { method: 'POST' });
+    var data = await res.json();
+
+    if (data.success) {
+      progressBar.style.width = '80%';
+      progressText.textContent = 'Restarting application...';
+
+      showNotification('Update in progress! Page will reload shortly...', 'success');
+
+      // Poll for the app to come back
+      progressBar.style.width = '90%';
+      progressText.textContent = 'Waiting for restart...';
+
+      setTimeout(function() {
+        progressBar.style.width = '100%';
+        waitForRestart();
+      }, 5000);
+    } else {
+      progressBar.style.width = '0%';
+      progressEl.style.display = 'none';
+      applyBtn.disabled = false;
+      applyBtn.textContent = 'Update Now';
+
+      if (data.manual_commands) {
+        manualEl.style.display = 'block';
+        commandsText.textContent = data.manual_commands;
+      }
+
+      showNotification(data.message || 'Update failed', 'error');
+    }
+  } catch (e) {
+    console.error('Error applying update:', e);
+    progressBar.style.width = '0%';
+    progressEl.style.display = 'none';
+    applyBtn.disabled = false;
+    applyBtn.textContent = 'Update Now';
+    showNotification('Connection error during update', 'error');
+  }
+}
+
+function waitForRestart() {
+  var progressText = document.getElementById('update-progress-text');
+  var attempts = 0;
+  var maxAttempts = 30;
+
+  var interval = setInterval(function() {
+    attempts++;
+    if (attempts > maxAttempts) {
+      clearInterval(interval);
+      progressText.textContent = 'Restart is taking longer than expected. Please refresh manually.';
+      return;
+    }
+
+    progressText.textContent = 'Waiting for restart... (' + attempts + 's)';
+
+    fetch('/api/version', { signal: AbortSignal.timeout(3000) })
+      .then(function(res) {
+        if (res.ok) {
+          clearInterval(interval);
+          progressText.textContent = 'Updated successfully! Reloading...';
+          showNotification('Update complete!', 'success');
+          setTimeout(function() { window.location.reload(); }, 1000);
+        }
+      })
+      .catch(function() {
+        // Still restarting
+      });
+  }, 2000);
+}
+
+function copyUpdateCommands() {
+  var text = document.getElementById('update-commands-text').textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    showNotification('Commands copied to clipboard', 'success');
+  }).catch(function() {
+    showNotification('Failed to copy', 'error');
+  });
+}
+
+// ============================================
 // Initialization
 // ============================================
 window.addEventListener('DOMContentLoaded', function() {

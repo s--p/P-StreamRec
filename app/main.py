@@ -12,6 +12,8 @@ import time
 from datetime import datetime
 import secrets
 import hashlib
+import http.client
+import socket as raw_socket
 
 from fastapi import FastAPI, HTTPException, Request, Cookie, Response
 from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, RedirectResponse
@@ -42,6 +44,65 @@ PASSWORD = os.getenv("PASSWORD", "")  # Mot de passe optionnel
 CHATURBATE_USERNAME = os.getenv("CHATURBATE_USERNAME", "")
 CHATURBATE_PASSWORD = os.getenv("CHATURBATE_PASSWORD", "")
 FLARESOLVERR_URL = os.getenv("FLARESOLVERR_URL", "http://flaresolverr:8191")
+
+# Docker constants
+DOCKER_SOCKET = '/var/run/docker.sock'
+DOCKER_IMAGE = 'ghcr.io/raccommode/p-streamrec'
+
+
+class _UnixHTTPConnection(http.client.HTTPConnection):
+    """HTTP connection over Unix domain socket (for Docker API)."""
+    def __init__(self, socket_path, timeout=30):
+        super().__init__('localhost', timeout=timeout)
+        self.socket_path = socket_path
+
+    def connect(self):
+        self.sock = raw_socket.socket(raw_socket.AF_UNIX, raw_socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self.socket_path)
+
+
+def _docker_api(method, path, body=None, timeout=30):
+    """Send a request to the Docker Engine API via Unix socket."""
+    conn = _UnixHTTPConnection(DOCKER_SOCKET, timeout=timeout)
+    headers = {}
+    body_bytes = None
+    if body is not None:
+        body_bytes = json.dumps(body).encode()
+        headers['Content-Type'] = 'application/json'
+    conn.request(method, path, body=body_bytes, headers=headers)
+    resp = conn.getresponse()
+    data = resp.read()
+    status = resp.status
+    conn.close()
+    return status, data
+
+
+def _get_container_id():
+    """Detect the current Docker container ID."""
+    hostname = raw_socket.gethostname()
+    if hostname and len(hostname) >= 12:
+        try:
+            int(hostname[:12], 16)
+            return hostname[:12]
+        except ValueError:
+            pass
+    for path in ('/proc/self/cgroup', '/proc/self/mountinfo'):
+        try:
+            with open(path, 'r') as f:
+                for line in f:
+                    if '/docker/' in line:
+                        for part in reversed(line.strip().split('/')):
+                            if len(part) >= 12:
+                                try:
+                                    int(part[:12], 16)
+                                    return part[:12]
+                                except ValueError:
+                                    continue
+        except FileNotFoundError:
+            continue
+    return None
+
 
 # Ensure dirs
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1373,6 +1434,205 @@ async def get_system_stats():
         "network": network_info,
         "disk_io": disk_io_info,
     }
+
+
+# ============================================
+# Update System Endpoints
+# ============================================
+
+@app.get("/api/system/check-update")
+async def check_for_update():
+    """Check GitHub for the latest release and compare with current version."""
+    current_version = os.getenv("APP_VERSION", "dev")
+    docker_available = os.path.exists(DOCKER_SOCKET)
+
+    try:
+        resp = requests.get(
+            "https://api.github.com/repos/raccommode/P-StreamRec/releases/latest",
+            timeout=10,
+            headers={"Accept": "application/vnd.github.v3+json"},
+        )
+        if resp.status_code == 200:
+            release = resp.json()
+            latest_version = release.get("tag_name", "").lstrip("v")
+            update_available = (
+                current_version != "dev"
+                and latest_version != ""
+                and current_version != latest_version
+            )
+            return {
+                "current_version": current_version,
+                "latest_version": latest_version,
+                "update_available": update_available,
+                "release_url": release.get("html_url", ""),
+                "release_notes": release.get("body", ""),
+                "published_at": release.get("published_at", ""),
+                "docker_available": docker_available,
+            }
+        return {
+            "current_version": current_version,
+            "latest_version": None,
+            "update_available": False,
+            "error": f"GitHub API returned {resp.status_code}",
+            "docker_available": docker_available,
+        }
+    except Exception as e:
+        return {
+            "current_version": current_version,
+            "latest_version": None,
+            "update_available": False,
+            "error": str(e),
+            "docker_available": docker_available,
+        }
+
+
+@app.post("/api/system/update")
+async def perform_system_update():
+    """Pull latest Docker image and recreate the container via Docker socket."""
+    if not os.path.exists(DOCKER_SOCKET):
+        return {
+            "success": False,
+            "error": "docker_socket_unavailable",
+            "message": "Docker socket not available. Add this volume to your docker-compose.yml to enable automatic updates: /var/run/docker.sock:/var/run/docker.sock",
+            "manual_commands": "docker compose pull && docker compose up -d",
+        }
+
+    container_id = _get_container_id()
+    if not container_id:
+        return {
+            "success": False,
+            "error": "container_id_unknown",
+            "message": "Cannot determine container ID.",
+            "manual_commands": "docker compose pull && docker compose up -d",
+        }
+
+    try:
+        # 1. Pull the latest image
+        logger.info("Update: pulling latest image", image=f"{DOCKER_IMAGE}:latest")
+        status, pull_data = _docker_api(
+            'POST',
+            f'/images/create?fromImage={DOCKER_IMAGE}&tag=latest',
+            timeout=300,
+        )
+        if status not in (200, 201):
+            return {"success": False, "error": "pull_failed", "message": f"Failed to pull image (HTTP {status})"}
+
+        # 2. Inspect current container to extract its configuration
+        status, inspect_data = _docker_api('GET', f'/containers/{container_id}/json')
+        if status != 200:
+            return {"success": False, "error": "inspect_failed", "message": "Cannot inspect current container"}
+
+        container_config = json.loads(inspect_data)
+        container_name = container_config.get("Name", "").lstrip("/") or "p-streamrec"
+        host_config = container_config.get("HostConfig", {})
+        config = container_config.get("Config", {})
+
+        # Build docker run arguments from the inspected config
+        run_args = [f"--name {container_name}"]
+
+        # Restart policy
+        restart = host_config.get("RestartPolicy", {})
+        if restart.get("Name"):
+            policy = restart["Name"]
+            if restart.get("MaximumRetryCount", 0) > 0:
+                policy += f":{restart['MaximumRetryCount']}"
+            run_args.append(f"--restart={policy}")
+
+        # Environment variables
+        for env in config.get("Env", []):
+            env_escaped = env.replace("'", "'\\''")
+            run_args.append(f"-e '{env_escaped}'")
+
+        # Volume binds
+        for bind in host_config.get("Binds", []):
+            run_args.append(f"-v '{bind}'")
+
+        # Port mappings
+        port_bindings = host_config.get("PortBindings", {})
+        for container_port, host_ports in port_bindings.items():
+            if host_ports:
+                for hp in host_ports:
+                    host_ip = hp.get("HostIp", "")
+                    host_port = hp.get("HostPort", "")
+                    if host_ip:
+                        run_args.append(f"-p {host_ip}:{host_port}:{container_port}")
+                    else:
+                        run_args.append(f"-p {host_port}:{container_port}")
+
+        # Networks
+        networks = container_config.get("NetworkSettings", {}).get("Networks", {})
+        network_names = list(networks.keys())
+        network_flag = ""
+        if network_names:
+            network_flag = f"--network={network_names[0]}"
+
+        # Extra network connections (beyond the first)
+        network_cmds = ""
+        for net_name in network_names[1:]:
+            network_cmds += f"\ndocker network connect {net_name} {container_name}"
+
+        run_cmd = f"docker run -d {network_flag} {' '.join(run_args)} {DOCKER_IMAGE}:latest"
+
+        updater_script = (
+            f"sleep 3\n"
+            f"echo '[P-StreamRec Updater] Stopping old container...'\n"
+            f"docker stop {container_id}\n"
+            f"docker rm {container_id}\n"
+            f"echo '[P-StreamRec Updater] Starting new container...'\n"
+            f"{run_cmd}\n"
+            f"{network_cmds}\n"
+            f"echo '[P-StreamRec Updater] Update complete!'\n"
+        )
+
+        # 3. Pull docker:cli image for the updater container
+        logger.info("Update: pulling docker:cli for updater")
+        _docker_api('POST', '/images/create?fromImage=docker&tag=cli', timeout=120)
+
+        # 4. Create the updater container
+        _docker_api('DELETE', '/containers/p-streamrec-updater?force=true')
+        updater_body = {
+            "Image": "docker:cli",
+            "Cmd": ["sh", "-c", updater_script],
+            "HostConfig": {
+                "Binds": ["/var/run/docker.sock:/var/run/docker.sock"],
+                "AutoRemove": True,
+            },
+        }
+        status, create_data = _docker_api('POST', '/containers/create?name=p-streamrec-updater', body=updater_body)
+        if status not in (200, 201):
+            return {
+                "success": False,
+                "error": "updater_create_failed",
+                "message": f"Failed to create updater container (HTTP {status})",
+                "manual_commands": "docker compose pull && docker compose up -d",
+            }
+
+        updater_id = json.loads(create_data).get("Id", "")
+
+        # 5. Start the updater — it will recreate our container in ~3 seconds
+        status, _ = _docker_api('POST', f'/containers/{updater_id}/start')
+        if status not in (200, 204):
+            return {
+                "success": False,
+                "error": "updater_start_failed",
+                "message": f"Failed to start updater (HTTP {status})",
+                "manual_commands": "docker compose pull && docker compose up -d",
+            }
+
+        logger.info("Update: updater started, container will restart in ~5 seconds")
+        return {
+            "success": True,
+            "message": "Update in progress. The application will restart in a few seconds.",
+        }
+
+    except Exception as e:
+        logger.error("Update failed", error=str(e), exc_info=True)
+        return {
+            "success": False,
+            "error": "exception",
+            "message": str(e),
+            "manual_commands": "docker compose pull && docker compose up -d",
+        }
 
 
 # ============================================
