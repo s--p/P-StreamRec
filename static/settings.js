@@ -669,11 +669,20 @@ async function checkForUpdate() {
     if (data.update_available) {
       statusEl.className = 'status-indicator unknown';
       statusEl.textContent = 'Update available';
-      applyBtn.style.display = 'inline-flex';
 
       if (data.release_notes) {
         notesContainer.style.display = 'block';
         notesContent.textContent = data.release_notes;
+      }
+
+      if (data.docker_available) {
+        applyBtn.style.display = 'inline-flex';
+      } else {
+        // Docker socket not mounted — show manual commands directly
+        applyBtn.style.display = 'none';
+        var commandsText = document.getElementById('update-commands-text');
+        manualEl.style.display = 'block';
+        commandsText.textContent = 'docker compose pull && docker compose up -d';
       }
 
       showNotification('Update available: v' + data.latest_version, 'success');
