@@ -227,6 +227,7 @@ async function loadRecordingSettings() {
       var autoDeleteThreshold = document.getElementById('autoDeleteThreshold');
       var thresholdRow = document.getElementById('autoDeleteThresholdRow');
       var thresholdValue = document.getElementById('thresholdValue');
+      var segmentMinutesInput = document.getElementById('segmentMinutesInput');
 
       if (autoConvertToggle) autoConvertToggle.checked = !!data.auto_convert;
       if (keepTsToggle) keepTsToggle.checked = !!data.keep_ts;
@@ -240,10 +241,26 @@ async function loadRecordingSettings() {
         autoDeleteThreshold.value = thresh;
         if (thresholdValue) thresholdValue.textContent = thresh + '%';
       }
+      if (segmentMinutesInput) {
+        var seg = Number(data.record_segment_minutes || 0);
+        if (!Number.isFinite(seg) || seg < 0) seg = 0;
+        segmentMinutesInput.value = String(seg);
+      }
     }
   } catch (e) {
     console.error('Error loading recording settings:', e);
   }
+}
+
+function updateRecordingSegmentMinutes(rawValue) {
+  var n = parseInt(rawValue, 10);
+  if (!Number.isFinite(n) || n < 0) n = 0;
+  if (n > 360) n = 360;
+
+  var input = document.getElementById('segmentMinutesInput');
+  if (input) input.value = String(n);
+
+  updateRecordingSetting('record_segment_minutes', n);
 }
 
 async function updateRecordingSetting(key, value) {
