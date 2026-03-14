@@ -215,7 +215,7 @@ class FFmpegManager:
             hls_m3u8 = os.path.join(sessions_dir, 'stream.m3u8')
 
             tee_spec = (
-                f"[f=mpegts:onfail=ignore]pipe:1|"
+                f"[f=mpegts]pipe:1|"
                 f"[f=hls:onfail=ignore:hls_time={self.hls_time}:hls_list_size={self.hls_list_size}:"
                 f"hls_flags=delete_segments+append_list+omit_endlist:"
                 f"hls_segment_filename={hls_seg}]"
