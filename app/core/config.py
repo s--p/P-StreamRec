@@ -52,6 +52,7 @@ AUTO_CONVERT_WHILE_RECORDING = os.getenv("AUTO_CONVERT_WHILE_RECORDING", "false"
 # - reencode: software x264 (best compatibility)
 # - copy: remux TS->MP4 without re-encode (lowest CPU)
 # - qsv: Intel QuickSync H.264 encode (requires ffmpeg qsv support + iGPU access)
+# - vaapi: Intel VAAPI encode (hardware fallback on Linux)
 CONVERT_MODE = os.getenv("CONVERT_MODE", "reencode").strip().lower()
 CONVERT_PRESET = os.getenv("CONVERT_PRESET", "medium")
 CONVERT_CRF = os.getenv("CONVERT_CRF", "23")

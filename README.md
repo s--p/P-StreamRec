@@ -82,7 +82,7 @@ docker run -d --name p-streamrec \
 | `CHATURBATE_PASSWORD` | — | Chaturbate password (optional) |
 | `FLARESOLVERR_URL` | — | FlareSolverr URL (e.g. `http://flaresolverr:8191`) |
 | `AUTO_CONVERT_WHILE_RECORDING` | `false` | Convert only when no live recording is active |
-| `CONVERT_MODE` | `reencode` | `reencode` (x264), `copy` (no re-encode), `qsv` (Intel QuickSync) |
+| `CONVERT_MODE` | `reencode` | `reencode` (x264), `copy` (no re-encode), `qsv` (Intel QuickSync), `vaapi` (Intel VAAPI) |
 | `CONVERT_QSV_DEVICE` | `/dev/dri/renderD128` | QSV render device path inside container |
 | `CONVERT_PRESET` | `medium` | FFmpeg preset for `reencode`/`qsv` |
 | `CONVERT_CRF` | `23` | Quality target for `reencode` mode |
