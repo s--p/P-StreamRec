@@ -30,6 +30,11 @@ try:
 except ValueError:
     THUMBNAIL_UPDATE_INTERVAL = 60
 
+try:
+    MONITOR_RECORDING_STALL_SECONDS = max(20, int(os.getenv("MONITOR_RECORDING_STALL_SECONDS", "45")))
+except ValueError:
+    MONITOR_RECORDING_STALL_SECONDS = 45
+
 async def check_model_status(
     session: aiohttp.ClientSession,
     username: str,
@@ -421,6 +426,8 @@ async def monitor_models_task(
         consecutive_status_failures = {}
         # Track restart attempts to avoid start storms when upstream is unstable.
         restart_attempts = {}
+        # Track recording file growth to detect stalled ffmpeg sessions.
+        recording_progress = {}
 
         try:
             restart_cooldown_seconds = max(
@@ -443,6 +450,14 @@ async def monitor_models_task(
                 
                 # Récupérer les sessions actives
                 active_sessions = manager.list_status()
+                running_session_ids = {
+                    s.get("id") for s in active_sessions if s.get("running") and s.get("id")
+                }
+
+                # Drop stale progress entries for sessions that are no longer running.
+                for stale_id in list(recording_progress.keys()):
+                    if stale_id not in running_session_ids:
+                        recording_progress.pop(stale_id, None)
                 
                 # Vérifier chaque modèle
                 for model in models:
@@ -483,6 +498,40 @@ async def monitor_models_task(
                         )
                         is_recording = active_session is not None
                         auto_record_enabled = bool(model.get('auto_record', True))
+
+                        # If a recording session stops producing bytes for too long,
+                        # restart it to reduce silent data loss periods.
+                        if is_recording and active_session:
+                            session_id = active_session.get("id")
+                            record_path = active_session.get("record_path")
+                            if session_id and record_path:
+                                try:
+                                    current_size = Path(record_path).stat().st_size
+                                except Exception:
+                                    current_size = -1
+
+                                now = time.time()
+                                progress = recording_progress.get(session_id)
+                                if not progress or current_size > progress.get("size", -1):
+                                    recording_progress[session_id] = {
+                                        "size": current_size,
+                                        "updated_at": now,
+                                    }
+                                else:
+                                    stalled_for = now - float(progress.get("updated_at", now))
+                                    if stalled_for >= MONITOR_RECORDING_STALL_SECONDS:
+                                        logger.warning(
+                                            "Enregistrement bloqué, redémarrage session",
+                                            task="monitor",
+                                            username=username,
+                                            session_id=session_id,
+                                            stalled_for_seconds=f"{stalled_for:.0f}",
+                                            file_size=current_size,
+                                        )
+                                        manager.stop_session(session_id)
+                                        recording_progress.pop(session_id, None)
+                                        is_recording = False
+                                        active_session = None
 
                         # Fast recovery path: if auto-record is enabled and model appears online,
                         # try to restart a dropped recording without waiting for the slower auto-record task.
