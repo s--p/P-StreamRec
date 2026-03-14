@@ -92,8 +92,14 @@ class ChaturbateAPI:
                                         or "chatvideocontext" in url
                                     ):
                                         should_bypass = True
+                                elif "/api/chatvideocontext/" in url and "application/json" not in content_type:
+                                    should_bypass = True
 
                         if should_bypass and self.flaresolverr:
+                            if "/api/chatvideocontext/" in url:
+                                # Cached clearance can become stale for API endpoints.
+                                self.flaresolverr.invalidate_cache()
+
                             logger.info(
                                 "Challenge/login page detected, attempting FlareSolverr bypass",
                                 url=url,
@@ -105,6 +111,7 @@ class ChaturbateAPI:
                                 retry_headers = dict(headers)
                                 cookies = solution.get("cookies", {})
                                 new_ua = solution.get("user_agent", "")
+                                solved_response = solution.get("response")
                                 if new_ua:
                                     retry_headers["User-Agent"] = new_ua
 
@@ -116,6 +123,17 @@ class ChaturbateAPI:
                                 if cookie_parts:
                                     retry_headers["Cookie"] = "; ".join(cookie_parts)
 
+                                # FlareSolverr may already return the final JSON payload.
+                                if isinstance(solved_response, str):
+                                    solved_strip = solved_response.lstrip()
+                                    if solved_strip.startswith("{") or solved_strip.startswith("["):
+                                        return _FakeResponse(
+                                            200,
+                                            solved_response.encode("utf-8"),
+                                            {"content-type": "application/json"},
+                                            "application/json",
+                                        )
+
                                 # Retry once with solved cookies.
                                 await self._rate_limit()
                                 async with session.request(
@@ -124,6 +142,22 @@ class ChaturbateAPI:
                                     **kwargs
                                 ) as retry_resp:
                                     retry_body = await retry_resp.read()
+
+                                    # If retry still returns HTML but FlareSolverr provided JSON,
+                                    # prefer the solved payload to avoid false offline toggles.
+                                    retry_ct = (retry_resp.content_type or "").lower()
+                                    if isinstance(solved_response, str):
+                                        solved_strip = solved_response.lstrip()
+                                        if "text/html" in retry_ct and (
+                                            solved_strip.startswith("{") or solved_strip.startswith("[")
+                                        ):
+                                            return _FakeResponse(
+                                                200,
+                                                solved_response.encode("utf-8"),
+                                                {"content-type": "application/json"},
+                                                "application/json",
+                                            )
+
                                     return _FakeResponse(
                                         retry_resp.status,
                                         retry_body,

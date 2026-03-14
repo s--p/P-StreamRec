@@ -14,6 +14,7 @@ const HLS_RETRY_DELAY_MS = 3000;
 const MAX_HLS_RECOVERY_ATTEMPTS = 6;
 let hlsRecoveryAttempts = 0;
 let restartTimer = null;
+let currentStreamUrl = '';
 
 // ============================================
 // Extract username from URL
@@ -79,49 +80,57 @@ function setOfflineStatus() {
 // ============================================
 async function loadModelStatus() {
   try {
-    var res = await fetch('/api/model/' + currentUsername + '/status');
-    if (!res.ok) return;
-    var data = await res.json();
+    // Stream-first strategy: this endpoint is the most reliable source of truth.
+    var streamUrl = await probeStreamUrl();
 
-    if (data.isOnline) {
+    if (streamUrl) {
       consecutiveOfflineChecks = 0;
-      setLiveStatus(data.viewers || 0);
 
-      // Start stream if not already playing
+      // Keep viewer info best-effort (do not block playback decisions on this).
+      fetch('/api/model/' + currentUsername + '/status')
+        .then(function(res) { return res.ok ? res.json() : null; })
+        .then(function(data) {
+          if (data) {
+            setLiveStatus(data.viewers || 0);
+          } else {
+            setLiveStatus(0);
+          }
+        })
+        .catch(function() {
+          setLiveStatus(0);
+        });
+
       if (!hlsPlayer) {
-        startStream();
-      }
-    } else {
-      // Status can be a false negative, probe stream availability before switching offline.
-      var streamUrl = await probeStreamUrl();
-      if (streamUrl) {
-        consecutiveOfflineChecks = 0;
-        setLiveStatus(data.viewers || 0);
-        if (!hlsPlayer) {
-          startStreamWithUrl(streamUrl);
-        }
+        startStreamWithUrl(streamUrl);
         return;
       }
 
-      consecutiveOfflineChecks += 1;
-
-      // Avoid toggling offline immediately while stream is currently playing.
-      if (hlsPlayer && consecutiveOfflineChecks < OFFLINE_CONFIRMATION_CHECKS) {
-        setLiveStatus(data.viewers || 0);
-        return;
+      // Refresh URL when tokenized URL rotates.
+      if (currentStreamUrl && currentStreamUrl !== streamUrl) {
+        startStreamWithUrl(streamUrl);
       }
+      return;
+    }
 
-      setOfflineStatus();
+    consecutiveOfflineChecks += 1;
 
-      // Stop stream if playing
-      if (hlsPlayer) {
-        hlsPlayer.destroy();
-        hlsPlayer = null;
-      }
-      if (restartTimer) {
-        clearTimeout(restartTimer);
-        restartTimer = null;
-      }
+    // Avoid toggling offline immediately while stream is currently playing.
+    if (hlsPlayer && consecutiveOfflineChecks < OFFLINE_CONFIRMATION_CHECKS) {
+      setLiveStatus(0);
+      return;
+    }
+
+    setOfflineStatus();
+
+    // Stop stream if playing
+    if (hlsPlayer) {
+      hlsPlayer.destroy();
+      hlsPlayer = null;
+      currentStreamUrl = '';
+    }
+    if (restartTimer) {
+      clearTimeout(restartTimer);
+      restartTimer = null;
     }
   } catch (e) {
     console.error('Error loading model status:', e);
@@ -182,6 +191,7 @@ async function startStream() {
 
 function startStreamWithUrl(streamUrl) {
   var video = document.getElementById('videoPlayer');
+  currentStreamUrl = streamUrl;
 
   if (restartTimer) {
     clearTimeout(restartTimer);
@@ -253,7 +263,12 @@ function scheduleStreamRestart() {
   hlsRecoveryAttempts += 1;
   restartTimer = setTimeout(async function() {
     restartTimer = null;
-    await startStream();
+    var refreshed = await probeStreamUrl();
+    if (refreshed) {
+      startStreamWithUrl(refreshed);
+    } else {
+      await startStream();
+    }
   }, HLS_RETRY_DELAY_MS);
 }
 
