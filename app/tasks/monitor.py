@@ -483,7 +483,6 @@ async def monitor_models_task(
                             auto_record_enabled
                             and not is_recording
                             and effective_online
-                            and status_request_ok
                             and chaturbate_api
                         ):
                             now = time.time()
