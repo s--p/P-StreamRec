@@ -7,7 +7,7 @@ import aiohttp
 import subprocess
 import os
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from datetime import datetime
 
 if TYPE_CHECKING:
@@ -22,7 +22,11 @@ from ..core.config import OUTPUT_DIR
 MONITOR_INTERVAL = 30  # Vérifie toutes les 30 secondes
 THUMBNAIL_UPDATE_INTERVAL = 60  # Miniature mise à jour toutes les 60 secondes
 
-async def check_model_status(session: aiohttp.ClientSession, username: str, csrftoken: str = None) -> dict:
+async def check_model_status(
+    session: aiohttp.ClientSession,
+    username: str,
+    csrftoken: Optional[str] = None,
+) -> dict:
     """Vérifie le statut d'un modèle via l'API Chaturbate"""
     try:
         url = f"https://chaturbate.com/api/chatvideocontext/{username}/"
@@ -377,7 +381,7 @@ async def monitor_models_task(
     db: 'Database',
     manager: 'FFmpegManager',
     ffmpeg_path: str = "ffmpeg",
-    chaturbate_api: 'ChaturbateAPI' = None,
+    chaturbate_api: Optional['ChaturbateAPI'] = None,
     offline_failure_threshold: int = 3,
 ):
     """
@@ -393,6 +397,15 @@ async def monitor_models_task(
     
     # Initialiser la base de données
     await db.initialize()
+
+    # Allow runtime tuning for anti-flapping behavior.
+    try:
+        offline_failure_threshold = max(
+            1,
+            int(os.getenv("MONITOR_OFFLINE_FAILURE_THRESHOLD", str(offline_failure_threshold)))
+        )
+    except ValueError:
+        offline_failure_threshold = max(1, offline_failure_threshold)
     
     # Créer une session HTTP persistante
     async with aiohttp.ClientSession() as session:

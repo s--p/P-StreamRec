@@ -9,7 +9,11 @@ let isModelTracked = false;
 let hlsPlayer = null;
 let statusCheckInterval = null;
 let consecutiveOfflineChecks = 0;
-const OFFLINE_CONFIRMATION_CHECKS = 2;
+const OFFLINE_CONFIRMATION_CHECKS = 4;
+const HLS_RETRY_DELAY_MS = 3000;
+const MAX_HLS_RECOVERY_ATTEMPTS = 6;
+let hlsRecoveryAttempts = 0;
+let restartTimer = null;
 
 // ============================================
 // Extract username from URL
@@ -44,6 +48,32 @@ async function initWatch() {
   statusCheckInterval = setInterval(loadModelStatus, 15000);
 }
 
+function setLiveStatus(viewers) {
+  var statusDot = document.getElementById('statusDot');
+  var statusText = document.getElementById('statusText');
+  var viewerCount = document.getElementById('viewerCount');
+  var viewerNum = document.getElementById('viewerNum');
+  var offlineOverlay = document.getElementById('offlineOverlay');
+
+  statusDot.className = 'status-dot online';
+  statusText.textContent = 'Live';
+  viewerCount.style.display = 'inline';
+  viewerNum.textContent = Number(viewers || 0).toLocaleString();
+  offlineOverlay.style.display = 'none';
+}
+
+function setOfflineStatus() {
+  var statusDot = document.getElementById('statusDot');
+  var statusText = document.getElementById('statusText');
+  var viewerCount = document.getElementById('viewerCount');
+  var offlineOverlay = document.getElementById('offlineOverlay');
+
+  statusDot.className = 'status-dot offline';
+  statusText.textContent = 'Offline';
+  viewerCount.style.display = 'none';
+  offlineOverlay.style.display = 'flex';
+}
+
 // ============================================
 // Load model status and start stream
 // ============================================
@@ -53,65 +83,60 @@ async function loadModelStatus() {
     if (!res.ok) return;
     var data = await res.json();
 
-    var statusDot = document.getElementById('statusDot');
-    var statusText = document.getElementById('statusText');
-    var viewerCount = document.getElementById('viewerCount');
-    var viewerNum = document.getElementById('viewerNum');
-    var offlineOverlay = document.getElementById('offlineOverlay');
-
     if (data.isOnline) {
       consecutiveOfflineChecks = 0;
-      statusDot.className = 'status-dot online';
-      statusText.textContent = 'Live';
-      viewerCount.style.display = 'inline';
-      viewerNum.textContent = Number(data.viewers || 0).toLocaleString();
-      offlineOverlay.style.display = 'none';
+      setLiveStatus(data.viewers || 0);
 
       // Start stream if not already playing
       if (!hlsPlayer) {
         startStream();
       }
     } else {
-      // Status says offline, but try loading the stream anyway
-      // The status API can return false negatives (rate limiting, cache miss)
-      if (!hlsPlayer) {
-        var streamLoaded = await tryLoadStream();
-        if (streamLoaded) {
-          consecutiveOfflineChecks = 0;
-          statusDot.className = 'status-dot online';
-          statusText.textContent = 'Live';
-          viewerCount.style.display = 'inline';
-          viewerNum.textContent = Number(data.viewers || 0).toLocaleString();
-          offlineOverlay.style.display = 'none';
-          return;
+      // Status can be a false negative, probe stream availability before switching offline.
+      var streamUrl = await probeStreamUrl();
+      if (streamUrl) {
+        consecutiveOfflineChecks = 0;
+        setLiveStatus(data.viewers || 0);
+        if (!hlsPlayer) {
+          startStreamWithUrl(streamUrl);
         }
+        return;
       }
 
       consecutiveOfflineChecks += 1;
 
       // Avoid toggling offline immediately while stream is currently playing.
       if (hlsPlayer && consecutiveOfflineChecks < OFFLINE_CONFIRMATION_CHECKS) {
-        statusDot.className = 'status-dot online';
-        statusText.textContent = 'Live';
-        viewerCount.style.display = 'inline';
-        viewerNum.textContent = Number(data.viewers || 0).toLocaleString();
-        offlineOverlay.style.display = 'none';
+        setLiveStatus(data.viewers || 0);
         return;
       }
 
-      statusDot.className = 'status-dot offline';
-      statusText.textContent = 'Offline';
-      viewerCount.style.display = 'none';
-      offlineOverlay.style.display = 'flex';
+      setOfflineStatus();
 
       // Stop stream if playing
       if (hlsPlayer) {
         hlsPlayer.destroy();
         hlsPlayer = null;
       }
+      if (restartTimer) {
+        clearTimeout(restartTimer);
+        restartTimer = null;
+      }
     }
   } catch (e) {
     console.error('Error loading model status:', e);
+  }
+}
+
+async function probeStreamUrl() {
+  try {
+    var res = await fetch('/api/model/' + currentUsername + '/stream');
+    if (!res.ok) return null;
+    var data = await res.json();
+    if (!data.streamUrl) return null;
+    return data.streamUrl;
+  } catch (e) {
+    return null;
   }
 }
 
@@ -120,13 +145,11 @@ async function loadModelStatus() {
 // ============================================
 async function tryLoadStream() {
   try {
-    var res = await fetch('/api/model/' + currentUsername + '/stream');
-    if (!res.ok) return false;
-    var data = await res.json();
-    if (!data.streamUrl) return false;
+    var streamUrl = await probeStreamUrl();
+    if (!streamUrl) return false;
 
     // Stream URL is available - start playing
-    startStreamWithUrl(data.streamUrl);
+    startStreamWithUrl(streamUrl);
     return true;
   } catch (e) {
     return false;
@@ -160,7 +183,17 @@ async function startStream() {
 function startStreamWithUrl(streamUrl) {
   var video = document.getElementById('videoPlayer');
 
+  if (restartTimer) {
+    clearTimeout(restartTimer);
+    restartTimer = null;
+  }
+
   if (Hls.isSupported()) {
+    if (hlsPlayer) {
+      hlsPlayer.destroy();
+      hlsPlayer = null;
+    }
+
     hlsPlayer = new Hls({
       enableWorker: true,
       lowLatencyMode: true,
@@ -169,13 +202,36 @@ function startStreamWithUrl(streamUrl) {
     hlsPlayer.loadSource(streamUrl);
     hlsPlayer.attachMedia(video);
     hlsPlayer.on(Hls.Events.MANIFEST_PARSED, function() {
+      hlsRecoveryAttempts = 0;
+      consecutiveOfflineChecks = 0;
       video.play().catch(function() {});
     });
     hlsPlayer.on(Hls.Events.ERROR, function(event, data) {
       if (data.fatal) {
         console.error('HLS fatal error:', data.type);
-        hlsPlayer.destroy();
-        hlsPlayer = null;
+
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+          try {
+            hlsPlayer.recoverMediaError();
+            return;
+          } catch (e) {
+            // fallthrough to restart path
+          }
+        }
+
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          try {
+            hlsPlayer.startLoad();
+          } catch (e) {
+            // ignore and use restart path below
+          }
+        }
+
+        if (hlsPlayer) {
+          hlsPlayer.destroy();
+          hlsPlayer = null;
+        }
+        scheduleStreamRestart();
       }
     });
   } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -185,6 +241,20 @@ function startStreamWithUrl(streamUrl) {
       video.play().catch(function() {});
     });
   }
+}
+
+function scheduleStreamRestart() {
+  if (restartTimer) return;
+  if (hlsRecoveryAttempts >= MAX_HLS_RECOVERY_ATTEMPTS) {
+    console.warn('Max HLS recovery attempts reached');
+    return;
+  }
+
+  hlsRecoveryAttempts += 1;
+  restartTimer = setTimeout(async function() {
+    restartTimer = null;
+    await startStream();
+  }, HLS_RETRY_DELAY_MS);
 }
 
 // ============================================
