@@ -1817,17 +1817,61 @@ async def toggle_auto_record(username: str, body: dict):
     )
 
     stopped_sessions = []
+    started_session = None
     if not new_auto_record:
         for session in manager.list_status():
             if session.get("running") and session.get("person") == username:
                 session_id = session.get("id")
                 if session_id and manager.stop_session(session_id):
                     stopped_sessions.append(session_id)
+    else:
+        is_recording = any(
+            s.get("running") and s.get("person") == username
+            for s in manager.list_status()
+        )
+
+        if not is_recording:
+            hls_source = None
+            try:
+                from .resolvers.chaturbate import resolve_m3u8_async
+                hls_source = await resolve_m3u8_async(username)
+            except Exception:
+                hls_source = None
+
+            if not hls_source and chaturbate_api:
+                try:
+                    hls_source = await chaturbate_api.get_edge_hls_url(username)
+                except Exception:
+                    hls_source = None
+
+            if hls_source:
+                try:
+                    sess = manager.start_session(
+                        input_url=hls_source,
+                        person=username,
+                        display_name=username,
+                    )
+                    if sess:
+                        started_session = sess.id
+                        logger.success(
+                            "Auto-record activé: démarrage immédiat",
+                            username=username,
+                            session_id=sess.id,
+                        )
+                except RuntimeError:
+                    pass
+                except Exception as e:
+                    logger.warning(
+                        "Auto-record activé mais démarrage immédiat échoué",
+                        username=username,
+                        error=str(e),
+                    )
 
     return {
         "success": True,
         "autoRecord": new_auto_record,
         "stoppedSessions": stopped_sessions,
+        "startedSession": started_session,
     }
 
 
@@ -1879,7 +1923,7 @@ async def save_playback_position(recording_id: str, body: dict):
 
 @app.get("/api/recordings-by-model")
 async def get_recordings_by_model(show_ts: bool = False):
-    """Get recordings grouped by model with stats, including models with 0 recordings"""
+    """Get recordings grouped by model with stats, including tracked models with 0 recordings."""
     groups = await db.get_recordings_grouped_by_model(show_ts=show_ts)
 
     # Build a lookup of auto_record status
@@ -1889,14 +1933,11 @@ async def get_recordings_by_model(show_ts: bool = False):
     # Build a set of usernames that have recordings
     usernames_with_recordings = set()
 
-    # Only include models that have auto_record enabled (or are not tracked at all but have recordings)
+    # Always include models that already have recordings, even if auto-record is disabled.
     result = []
     for group in groups:
         username = group["username"]
         usernames_with_recordings.add(username)
-        # Skip models with auto_record explicitly disabled
-        if username in auto_record_map and not auto_record_map[username]:
-            continue
         thumb_url = f"/api/thumbnail/{username}"
         result.append({
             "username": username,
@@ -1908,10 +1949,10 @@ async def get_recordings_by_model(show_ts: bool = False):
             "autoRecord": auto_record_map.get(username, True),
         })
 
-    # Also include tracked models (auto_record=1) that have 0 recordings
+    # Also include tracked models that have 0 recordings.
     for model in all_models:
         username = model["username"]
-        if username not in usernames_with_recordings and model.get("auto_record"):
+        if username not in usernames_with_recordings:
             result.append({
                 "username": username,
                 "recordingCount": 0,
@@ -1919,7 +1960,7 @@ async def get_recordings_by_model(show_ts: bool = False):
                 "lastRecordingAt": None,
                 "totalDuration": 0,
                 "thumbnail": f"/api/thumbnail/{username}",
-                "autoRecord": True,
+                "autoRecord": bool(model.get("auto_record", True)),
             })
 
     return {"models": result}
