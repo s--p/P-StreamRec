@@ -58,7 +58,7 @@ class ChaturbateAPI:
         headers: Optional[Dict] = None,
         **kwargs
     ) -> Optional[aiohttp.ClientResponse]:
-        """Make an HTTP request with rate limiting, retry on 403"""
+        """Make an HTTP request with rate limiting and challenge bypass."""
         async with self._semaphore:
             await self._rate_limit()
 
@@ -72,39 +72,65 @@ class ChaturbateAPI:
                         timeout=aiohttp.ClientTimeout(total=15),
                         **kwargs
                     ) as resp:
-                        if resp.status == 403 and self.flaresolverr:
-                            # Cloudflare block - try FlareSolverr
-                            logger.info("403 detected, attempting FlareSolverr bypass")
+                        # Read body before context exits
+                        body = await resp.read()
+
+                        should_bypass = False
+                        if self.flaresolverr:
+                            if resp.status == 403:
+                                should_bypass = True
+                            elif resp.status == 200:
+                                # Chaturbate sometimes responds with HTML redirects/challenges
+                                # on API endpoints instead of JSON (e.g. /?next=/api/chatvideocontext/...).
+                                content_type = (resp.content_type or "").lower()
+                                if "text/html" in content_type:
+                                    probe = body[:4096].decode("utf-8", errors="ignore").lower()
+                                    if (
+                                        "?next=" in probe
+                                        or "cloudflare" in probe
+                                        or "cf-chl" in probe
+                                        or "chatvideocontext" in url
+                                    ):
+                                        should_bypass = True
+
+                        if should_bypass and self.flaresolverr:
+                            logger.info(
+                                "Challenge/login page detected, attempting FlareSolverr bypass",
+                                url=url,
+                                status=resp.status,
+                                content_type=resp.content_type,
+                            )
                             solution = await self.flaresolverr.solve_challenge(url)
                             if solution:
+                                retry_headers = dict(headers)
                                 cookies = solution.get("cookies", {})
                                 new_ua = solution.get("user_agent", "")
-                                headers["User-Agent"] = new_ua
+                                if new_ua:
+                                    retry_headers["User-Agent"] = new_ua
+
                                 cookie_parts = []
                                 for k, v in self.auth.get_cookies().items():
                                     cookie_parts.append(f"{k}={v}")
                                 for k, v in cookies.items():
                                     cookie_parts.append(f"{k}={v}")
-                                headers["Cookie"] = "; ".join(cookie_parts)
+                                if cookie_parts:
+                                    retry_headers["Cookie"] = "; ".join(cookie_parts)
 
-                                # Retry
+                                # Retry once with solved cookies.
                                 await self._rate_limit()
                                 async with session.request(
-                                    method, url, headers=headers, ssl=False,
+                                    method, url, headers=retry_headers, ssl=False,
                                     timeout=aiohttp.ClientTimeout(total=15),
                                     **kwargs
                                 ) as retry_resp:
-                                    # Read body before response context exits
-                                    body = await retry_resp.read()
+                                    retry_body = await retry_resp.read()
                                     return _FakeResponse(
                                         retry_resp.status,
-                                        body,
+                                        retry_body,
                                         retry_resp.headers,
                                         retry_resp.content_type
                                     )
 
-                        # Read body before context exits
-                        body = await resp.read()
                         return _FakeResponse(
                             resp.status, body, resp.headers, resp.content_type
                         )
@@ -478,6 +504,63 @@ class ChaturbateAPI:
             logger.debug("API HLS failed", username=username, error=str(e))
 
         return None
+
+    async def get_model_status(self, username: str) -> Dict[str, Any]:
+        """Get model online status and stream info via authenticated API flow."""
+        try:
+            api_url = f"https://chaturbate.com/api/chatvideocontext/{username}/"
+            resp = await self._request("GET", api_url)
+
+            if not resp or resp.status != 200:
+                return {
+                    "is_online": False,
+                    "viewers": 0,
+                    "hls_source": None,
+                    "request_ok": False,
+                }
+
+            try:
+                data = resp.json()
+            except Exception as e:
+                logger.debug("Model status JSON parse error", username=username, error=str(e))
+                return {
+                    "is_online": False,
+                    "viewers": 0,
+                    "hls_source": None,
+                    "request_ok": False,
+                }
+
+            hls_source = None
+            for field in [
+                "hls_source_hd",
+                "hls_source_high",
+                "hls_source_1080p",
+                "hls_source_720p",
+                "hls_source",
+            ]:
+                if data.get(field):
+                    hls_source = data[field]
+                    break
+
+            room_status = data.get("room_status", "")
+            is_online = bool(hls_source) or room_status in {"public", "away"}
+            viewers = data.get("num_users", data.get("num_viewers", 0))
+
+            return {
+                "is_online": bool(is_online),
+                "viewers": int(viewers or 0),
+                "hls_source": hls_source,
+                "request_ok": True,
+            }
+
+        except Exception as e:
+            logger.debug("Error checking model status", username=username, error=str(e))
+            return {
+                "is_online": False,
+                "viewers": 0,
+                "hls_source": None,
+                "request_ok": False,
+            }
 
 
 class _FakeResponse:

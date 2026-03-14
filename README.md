@@ -43,7 +43,7 @@ services:
     restart: unless-stopped
 
   p-streamrec:
-    image: ghcr.io/raccommode/p-streamrec:latest
+    image: ghcr.io/s--p/p-streamrec:latest
     depends_on:
       - flaresolverr
     environment:
@@ -62,7 +62,7 @@ services:
 docker run -d --name p-streamrec \
   -p 8080:8080 -v ./data:/data \
   -e CB_RESOLVER_ENABLED=true \
-  ghcr.io/raccommode/p-streamrec:latest
+  ghcr.io/s--p/p-streamrec:latest
 ```
 
 **Access:** `http://localhost:8080`

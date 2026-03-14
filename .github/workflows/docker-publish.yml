@@ -57,7 +57,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/raccommode/p-streamrec
+          images: ghcr.io/s--p/p-streamrec
           tags: |
             type=raw,value=${{ steps.version.outputs.version }}
             type=raw,value=latest
