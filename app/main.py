@@ -47,7 +47,7 @@ FLARESOLVERR_URL = os.getenv("FLARESOLVERR_URL", "http://flaresolverr:8191")
 
 # Docker constants
 DOCKER_SOCKET = '/var/run/docker.sock'
-DOCKER_IMAGE = 'ghcr.io/raccommode/p-streamrec'
+DOCKER_IMAGE = 'ghcr.io/s--p/p-streamrec'
 
 
 class _UnixHTTPConnection(http.client.HTTPConnection):
@@ -807,38 +807,31 @@ async def get_model_status(username: str):
             "viewers": model.get('viewers', 0)
         }
 
-    # Modèle non trouvé ou offline dans le cache: vérifier en direct via l'API Chaturbate
-    # Try up to 2 attempts with better headers
-    for attempt in range(2):
-        try:
-            import aiohttp
-            api_url = f"https://chaturbate.com/api/chatvideocontext/{username}/"
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                "Accept": "application/json",
-                "Accept-Language": "en-US,en;q=0.9",
-                "Referer": f"https://chaturbate.com/{username}/",
-                "Origin": "https://chaturbate.com",
-            }
-            async with aiohttp.ClientSession() as session:
-                async with session.get(api_url, headers=headers, timeout=aiohttp.ClientTimeout(total=15), ssl=False) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        hls_fields = ['hls_source', 'hls_source_hd', 'hls_source_high', 'hls_source_720p', 'hls_source_1080p']
-                        is_online = any(data.get(f) for f in hls_fields)
-                        viewers = data.get('num_viewers', 0)
-                        if is_online:
-                            return {
-                                "username": username,
-                                "isOnline": True,
-                                "thumbnail": f"/api/thumbnail/{username}",
-                                "viewers": viewers
-                            }
-                        break  # Got a valid response, model is just offline
-        except Exception as e:
-            logger.debug("Fallback API Chaturbate échoué pour status", username=username, error=str(e), attempt=attempt + 1)
+    # Modèle non trouvé ou offline dans le cache: vérifier via le client authentifié.
+    if chaturbate_api:
+        for attempt in range(2):
+            try:
+                status = await chaturbate_api.get_model_status(username)
+                if status.get('request_ok') and status.get('is_online'):
+                    return {
+                        "username": username,
+                        "isOnline": True,
+                        "thumbnail": f"/api/thumbnail/{username}",
+                        "viewers": status.get('viewers', 0)
+                    }
+
+                # We got a valid response; if offline, keep cached state.
+                if status.get('request_ok'):
+                    break
+            except Exception as e:
+                logger.debug(
+                    "Fallback API Chaturbate échoué pour status",
+                    username=username,
+                    error=str(e),
+                    attempt=attempt + 1
+                )
             if attempt == 0:
-                await asyncio.sleep(1)  # Brief wait before retry
+                await asyncio.sleep(1)
 
     return {
         "username": username,
@@ -2267,7 +2260,7 @@ async def startup_event():
             logger.warning("Chaturbate auto-login failed", error=result.get("error"))
 
     # Démarrer les tâches de fond
-    asyncio.create_task(monitor_models_task(db, manager, FFMPEG_PATH))
+    asyncio.create_task(monitor_models_task(db, manager, FFMPEG_PATH, cb_api))
     asyncio.create_task(auto_record_task())
     asyncio.create_task(cleanup_old_recordings_task())
     asyncio.create_task(auto_convert_recordings_task(db, OUTPUT_DIR, manager, FFMPEG_PATH))

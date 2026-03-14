@@ -13,6 +13,7 @@ from datetime import datetime
 if TYPE_CHECKING:
     from ..ffmpeg_runner import FFmpegManager
     from ..core.database import Database
+    from ..services.chaturbate_api import ChaturbateAPI
 
 from ..logger import logger
 from ..core.config import OUTPUT_DIR
@@ -84,7 +85,8 @@ async def check_model_status(session: aiohttp.ClientSession, username: str, csrf
                 return {
                     "is_online": is_online,
                     "viewers": viewers,
-                    "hls_source": hls_source
+                    "hls_source": hls_source,
+                    "request_ok": True,
                 }
     except Exception as e:
         logger.debug("Erreur vérification statut modèle", username=username, error=str(e))
@@ -92,7 +94,8 @@ async def check_model_status(session: aiohttp.ClientSession, username: str, csrf
     return {
         "is_online": False,
         "viewers": 0,
-        "hls_source": None
+        "hls_source": None,
+        "request_ok": False,
     }
 
 async def generate_thumbnail_from_stream(
@@ -373,7 +376,9 @@ async def update_recordings_cache(db: 'Database', username: str, output_dir: Pat
 async def monitor_models_task(
     db: 'Database',
     manager: 'FFmpegManager',
-    ffmpeg_path: str = "ffmpeg"
+    ffmpeg_path: str = "ffmpeg",
+    chaturbate_api: 'ChaturbateAPI' = None,
+    offline_failure_threshold: int = 3,
 ):
     """
     Tâche de monitoring en arrière-plan
@@ -391,6 +396,9 @@ async def monitor_models_task(
     
     # Créer une session HTTP persistante
     async with aiohttp.ClientSession() as session:
+        # Track transient request failures to avoid online/offline flicker.
+        consecutive_status_failures = {}
+
         while True:
             try:
                 # Récupérer tous les modèles depuis la DB
@@ -411,7 +419,31 @@ async def monitor_models_task(
                     
                     try:
                         # Vérifier le statut en ligne
-                        status = await check_model_status(session, username, csrftoken)
+                        if chaturbate_api:
+                            status = await chaturbate_api.get_model_status(username)
+                        else:
+                            status = await check_model_status(session, username, csrftoken)
+
+                        status_request_ok = bool(status.get('request_ok', True))
+                        effective_online = bool(status.get('is_online', False))
+                        previous_online = bool(model.get('is_online', False))
+
+                        if status_request_ok:
+                            consecutive_status_failures[username] = 0
+                        else:
+                            failures = consecutive_status_failures.get(username, 0) + 1
+                            consecutive_status_failures[username] = failures
+
+                            # Keep previous online state for transient failures.
+                            if previous_online and failures < offline_failure_threshold:
+                                effective_online = True
+                                status['viewers'] = int(model.get('viewers', 0) or 0)
+                                logger.debug(
+                                    "Statut conservé (entprellung)",
+                                    username=username,
+                                    failures=failures,
+                                    threshold=offline_failure_threshold,
+                                )
                         
                         # Vérifier si en cours d'enregistrement
                         active_session = next(
@@ -437,7 +469,7 @@ async def monitor_models_task(
                                     ffmpeg_path
                                 )
                             
-                            if not thumbnail_path and status['is_online']:
+                            if not thumbnail_path and effective_online:
                                 # Miniature depuis Chaturbate
                                 thumbnail_path = await download_thumbnail_from_chaturbate(
                                     session,
@@ -456,7 +488,7 @@ async def monitor_models_task(
                         # Mettre à jour le statut dans la DB
                         await db.update_model_status(
                             username=username,
-                            is_online=status['is_online'],
+                            is_online=effective_online,
                             viewers=status['viewers'],
                             is_recording=is_recording,
                             thumbnail_path=thumbnail_path
@@ -467,7 +499,8 @@ async def monitor_models_task(
                         
                         logger.debug("Modèle mis à jour",
                                    username=username,
-                                   is_online=status['is_online'],
+                                   is_online=effective_online,
+                                   request_ok=status_request_ok,
                                    is_recording=is_recording,
                                    viewers=status['viewers'])
                     

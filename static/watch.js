@@ -8,6 +8,8 @@ let isAutoRecord = false;
 let isModelTracked = false;
 let hlsPlayer = null;
 let statusCheckInterval = null;
+let consecutiveOfflineChecks = 0;
+const OFFLINE_CONFIRMATION_CHECKS = 2;
 
 // ============================================
 // Extract username from URL
@@ -58,6 +60,7 @@ async function loadModelStatus() {
     var offlineOverlay = document.getElementById('offlineOverlay');
 
     if (data.isOnline) {
+      consecutiveOfflineChecks = 0;
       statusDot.className = 'status-dot online';
       statusText.textContent = 'Live';
       viewerCount.style.display = 'inline';
@@ -74,6 +77,7 @@ async function loadModelStatus() {
       if (!hlsPlayer) {
         var streamLoaded = await tryLoadStream();
         if (streamLoaded) {
+          consecutiveOfflineChecks = 0;
           statusDot.className = 'status-dot online';
           statusText.textContent = 'Live';
           viewerCount.style.display = 'inline';
@@ -81,6 +85,18 @@ async function loadModelStatus() {
           offlineOverlay.style.display = 'none';
           return;
         }
+      }
+
+      consecutiveOfflineChecks += 1;
+
+      // Avoid toggling offline immediately while stream is currently playing.
+      if (hlsPlayer && consecutiveOfflineChecks < OFFLINE_CONFIRMATION_CHECKS) {
+        statusDot.className = 'status-dot online';
+        statusText.textContent = 'Live';
+        viewerCount.style.display = 'inline';
+        viewerNum.textContent = Number(data.viewers || 0).toLocaleString();
+        offlineOverlay.style.display = 'none';
+        return;
       }
 
       statusDot.className = 'status-dot offline';

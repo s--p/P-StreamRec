@@ -20,18 +20,46 @@ class FlareSolverrClient:
         self._cache_expires_at: float = 0
 
     async def is_available(self) -> bool:
-        """Check if FlareSolverr is healthy"""
+        """Check if FlareSolverr is healthy.
+
+        FlareSolverr versions differ in exposed health endpoints. We probe
+        multiple endpoints to avoid reporting false negatives in the UI.
+        """
+        timeout = aiohttp.ClientTimeout(total=5)
+
+        async def _parse_ready_message(resp: aiohttp.ClientResponse) -> bool:
+            try:
+                data = await resp.json(content_type=None)
+                if isinstance(data, dict):
+                    msg = str(data.get("msg", ""))
+                    status = str(data.get("status", "")).lower()
+                    return "ready" in msg.lower() or status == "ok"
+            except Exception:
+                text = await resp.text()
+                return "FlareSolverr is ready" in text
+            return False
+
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    f"{self.base_url}/health",
-                    timeout=aiohttp.ClientTimeout(total=5)
-                ) as resp:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                # Some versions expose /health.
+                async with session.get(f"{self.base_url}/health") as resp:
+                    if resp.status == 200 and await _parse_ready_message(resp):
+                        return True
+
+                # v3.x commonly returns readiness on GET /.
+                async with session.get(f"{self.base_url}/") as resp:
+                    if resp.status == 200 and await _parse_ready_message(resp):
+                        return True
+
+                # Fallback: command endpoint is reachable and responds.
+                payload = {"cmd": "sessions.list"}
+                async with session.post(f"{self.base_url}/v1", json=payload) as resp:
                     if resp.status == 200:
-                        data = await resp.json()
-                        return data.get("msg") == "FlareSolverr is ready!"
+                        data = await resp.json(content_type=None)
+                        if isinstance(data, dict):
+                            return str(data.get("status", "")).lower() == "ok"
         except Exception as e:
-            logger.debug("FlareSolverr not available", error=str(e))
+            logger.debug("FlareSolverr not available", error=str(e), url=self.base_url)
         return False
 
     async def solve_challenge(self, url: str) -> Optional[Dict[str, Any]]:
