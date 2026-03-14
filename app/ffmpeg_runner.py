@@ -153,6 +153,10 @@ class FFmpegManager:
         self.hls_time = hls_time
         self.hls_list_size = hls_list_size
         self.record_segment_minutes = max(0, int(record_segment_minutes or 0))
+        self.reconnect_delay_max = int(os.getenv("FFMPEG_RECONNECT_DELAY_MAX", "30"))
+        self.reconnect_on_http_error = os.getenv("FFMPEG_RECONNECT_ON_HTTP_ERROR", "4xx,5xx")
+        self.reconnect_at_eof = os.getenv("FFMPEG_RECONNECT_AT_EOF", "1")
+        self.rw_timeout_us = int(os.getenv("FFMPEG_RW_TIMEOUT_US", "15000000"))
         self._lock = threading.Lock()
         self._sessions: Dict[str, FFmpegSession] = {}
         # Create subdirectories for sessions (HLS) and records (TS by person/day)
@@ -211,8 +215,8 @@ class FFmpegManager:
             hls_m3u8 = os.path.join(sessions_dir, 'stream.m3u8')
 
             tee_spec = (
-                f"[f=mpegts]pipe:1|"
-                f"[f=hls:hls_time={self.hls_time}:hls_list_size={self.hls_list_size}:"
+                f"[f=mpegts:onfail=ignore]pipe:1|"
+                f"[f=hls:onfail=ignore:hls_time={self.hls_time}:hls_list_size={self.hls_list_size}:"
                 f"hls_flags=delete_segments+append_list+omit_endlist:"
                 f"hls_segment_filename={hls_seg}]"
                 f"{hls_m3u8}"
@@ -223,9 +227,13 @@ class FFmpegManager:
                 "-nostdin", "-hide_banner", "-loglevel", "warning",
                 "-y",
                 # Options de reconnexion pour stabilité
+                "-rw_timeout", str(self.rw_timeout_us),
                 "-reconnect", "1",
+                "-reconnect_at_eof", str(self.reconnect_at_eof),
                 "-reconnect_streamed", "1",
-                "-reconnect_delay_max", "10",
+                "-reconnect_on_network_error", "1",
+                "-reconnect_on_http_error", self.reconnect_on_http_error,
+                "-reconnect_delay_max", str(self.reconnect_delay_max),
                 "-i", sess.input_url,
                 "-map", "0",
                 "-c", "copy",

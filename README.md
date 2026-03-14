@@ -79,6 +79,10 @@ docker run -d --name p-streamrec \
 | `AUTO_RECORD_INTERVAL` | `120` | Interval between auto-record checks (seconds) |
 | `MONITOR_AUTORECORD_RESTART_COOLDOWN` | `45` | Cooldown between monitor recovery start attempts (seconds) |
 | `RECORD_SEGMENT_MINUTES` | `0` | TS segment duration in minutes (`0` = one continuous file) |
+| `FFMPEG_RECONNECT_DELAY_MAX` | `30` | Max delay between FFmpeg reconnect attempts (seconds) |
+| `FFMPEG_RECONNECT_ON_HTTP_ERROR` | `4xx,5xx` | HTTP status classes that trigger FFmpeg reconnect |
+| `FFMPEG_RECONNECT_AT_EOF` | `1` | Reconnect when input reaches EOF |
+| `FFMPEG_RW_TIMEOUT_US` | `15000000` | FFmpeg network read/write timeout (microseconds) |
 | `PASSWORD` | — | Password to protect the interface (optional) |
 | `AUTO_RECORD_USERS` | — | Comma-separated usernames to auto-record |
 | `CHATURBATE_USERNAME` | — | Chaturbate login (optional, enables Following + better quality) |
