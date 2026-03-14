@@ -541,28 +541,35 @@ class ChaturbateAPI:
 
     async def get_model_status(self, username: str) -> Dict[str, Any]:
         """Get model online status and stream info via authenticated API flow."""
+        async def _fallback_from_hls() -> Dict[str, Any]:
+            hls_url = await self.get_edge_hls_url(username)
+            if hls_url:
+                return {
+                    "is_online": True,
+                    "viewers": 0,
+                    "hls_source": hls_url,
+                    "request_ok": True,
+                }
+            return {
+                "is_online": False,
+                "viewers": 0,
+                "hls_source": None,
+                "request_ok": False,
+            }
+
         try:
             api_url = f"https://chaturbate.com/api/chatvideocontext/{username}/"
             resp = await self._request("GET", api_url)
 
             if not resp or resp.status != 200:
-                return {
-                    "is_online": False,
-                    "viewers": 0,
-                    "hls_source": None,
-                    "request_ok": False,
-                }
+                logger.debug("Model status API unavailable, trying HLS fallback", username=username)
+                return await _fallback_from_hls()
 
             try:
                 data = resp.json()
             except Exception as e:
                 logger.debug("Model status JSON parse error", username=username, error=str(e))
-                return {
-                    "is_online": False,
-                    "viewers": 0,
-                    "hls_source": None,
-                    "request_ok": False,
-                }
+                return await _fallback_from_hls()
 
             hls_source = None
             for field in [
@@ -589,12 +596,7 @@ class ChaturbateAPI:
 
         except Exception as e:
             logger.debug("Error checking model status", username=username, error=str(e))
-            return {
-                "is_online": False,
-                "viewers": 0,
-                "hls_source": None,
-                "request_ok": False,
-            }
+            return await _fallback_from_hls()
 
 
 class _FakeResponse:
