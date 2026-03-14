@@ -19,7 +19,7 @@ class FlareSolverrClient:
         self._cached_user_agent: Optional[str] = None
         self._cache_expires_at: float = 0
 
-    async def is_available(self) -> bool:
+    async def is_available(self, quiet: bool = False) -> bool:
         """Check if FlareSolverr is healthy.
 
         FlareSolverr versions differ in exposed health endpoints. We probe
@@ -59,7 +59,8 @@ class FlareSolverrClient:
                         if isinstance(data, dict):
                             return str(data.get("status", "")).lower() == "ok"
         except Exception as e:
-            logger.debug("FlareSolverr not available", error=str(e), url=self.base_url)
+            if not quiet:
+                logger.debug("FlareSolverr not available", error=str(e), url=self.base_url)
         return False
 
     async def solve_challenge(self, url: str) -> Optional[Dict[str, Any]]:
@@ -111,6 +112,7 @@ class FlareSolverrClient:
                 solution = data.get("solution", {})
                 cookies_list = solution.get("cookies", [])
                 user_agent = solution.get("userAgent", "")
+                response_body = solution.get("response")
 
                 # Extract cookies into a dict
                 cookies = {}
@@ -127,7 +129,8 @@ class FlareSolverrClient:
                 logger.success("Cloudflare challenge solved", cookies_count=len(cookies))
                 return {
                     "cookies": cookies,
-                    "user_agent": user_agent
+                    "user_agent": user_agent,
+                    "response": response_body,
                 }
 
             except asyncio.TimeoutError:

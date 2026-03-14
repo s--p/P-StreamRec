@@ -795,34 +795,32 @@ async def api_stop(session_id: str):
 
 @app.get("/api/model/{username}/status")
 async def get_model_status(username: str):
-    """Récupère le statut d'un modèle depuis le cache SQLite, avec fallback sur l'API Chaturbate"""
-    # Lire directement depuis le cache SQLite (mis à jour par la tâche de monitoring)
+    """Récupère le statut d'un modèle, cache-first pour éviter le flapping."""
+    # Lire directement depuis le cache SQLite (mis à jour par la tâche de monitoring).
+    # For known models, we avoid direct upstream probing here to prevent repeated
+    # challenge loops from the watch page poller.
     model = await db.get_model(username)
 
-    if model and model.get('is_online'):
+    if model:
         return {
             "username": username,
-            "isOnline": True,
+            "isOnline": bool(model.get('is_online', False)),
             "thumbnail": f"/api/thumbnail/{username}",
-            "viewers": model.get('viewers', 0)
+            "viewers": int(model.get('viewers', 0) or 0)
         }
 
-    # Modèle non trouvé ou offline dans le cache: vérifier via le client authentifié.
+    # Unknown model fallback: probe once via authenticated API client.
     if chaturbate_api:
         for attempt in range(2):
             try:
                 status = await chaturbate_api.get_model_status(username)
-                if status.get('request_ok') and status.get('is_online'):
+                if status.get('request_ok'):
                     return {
                         "username": username,
-                        "isOnline": True,
+                        "isOnline": bool(status.get('is_online')),
                         "thumbnail": f"/api/thumbnail/{username}",
-                        "viewers": status.get('viewers', 0)
+                        "viewers": int(status.get('viewers', 0) or 0)
                     }
-
-                # We got a valid response; if offline, keep cached state.
-                if status.get('request_ok'):
-                    break
             except Exception as e:
                 logger.debug(
                     "Fallback API Chaturbate échoué pour status",
@@ -2215,6 +2213,28 @@ async def sync_following_task(chaturbate_api, auth_service):
             await asyncio.sleep(60)
 
 
+async def wait_for_flaresolverr_ready(flaresolverr: FlareSolverrClient) -> bool:
+    """Wait briefly for FlareSolverr during startup to avoid race-condition false negatives."""
+    max_attempts = int(os.getenv("FLARESOLVERR_STARTUP_RETRIES", "10"))
+    delay_seconds = float(os.getenv("FLARESOLVERR_STARTUP_DELAY", "2"))
+
+    for attempt in range(1, max_attempts + 1):
+        if await flaresolverr.is_available(quiet=True):
+            if attempt > 1:
+                logger.info(
+                    "FlareSolverr prêt après retries",
+                    url=flaresolverr.base_url,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                )
+            return True
+
+        if attempt < max_attempts:
+            await asyncio.sleep(delay_seconds)
+
+    return False
+
+
 @app.on_event("startup")
 async def startup_event():
     """Démarre les background tasks au démarrage de l'application"""
@@ -2226,7 +2246,7 @@ async def startup_event():
 
     # Initialize FlareSolverr client
     flaresolverr = FlareSolverrClient(FLARESOLVERR_URL)
-    fs_available = await flaresolverr.is_available()
+    fs_available = await wait_for_flaresolverr_ready(flaresolverr)
     if fs_available:
         logger.info("FlareSolverr connecté", url=FLARESOLVERR_URL)
     else:
