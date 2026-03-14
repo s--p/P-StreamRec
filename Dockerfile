@@ -11,7 +11,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Install ffmpeg and build dependencies for native packages (psutil on arm64)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg ca-certificates gcc python3-dev && \
+        apt-get install -y --no-install-recommends \
+            ffmpeg \
+            ca-certificates \
+            gcc \
+            python3-dev \
+            libmfx1 \
+            libva2 \
+            libva-drm2 \
+            vainfo && \
+        (apt-get install -y --no-install-recommends intel-media-va-driver || apt-get install -y --no-install-recommends i965-va-driver) && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

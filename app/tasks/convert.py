@@ -2,7 +2,9 @@
 Tâche de conversion automatique des enregistrements TS -> MP4
 """
 import asyncio
+import re
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from ..logger import logger
@@ -15,7 +17,23 @@ from ..core.config import (
     CONVERT_CRF,
     CONVERT_AUDIO_BITRATE,
     CONVERT_COPY_AUDIO,
+    CONVERT_QSV_DEVICE,
 )
+
+
+def _build_mp4_path_from_ts(ts_path: Path) -> Path:
+    """Generate MP4 name as <username><date>_recorded.mp4 in the same folder."""
+    username = ts_path.parent.name or "recording"
+    stem = ts_path.stem
+
+    # Prefer timestamp found in TS filename: YYYYMMDD_HHMMSS
+    match = re.search(r"(\d{8}_\d{6}|\d{8})", stem)
+    if match:
+        date_token = match.group(1)
+    else:
+        date_token = datetime.fromtimestamp(ts_path.stat().st_mtime).strftime("%Y%m%d_%H%M%S")
+
+    return ts_path.parent / f"{username}{date_token}_recorded.mp4"
 
 
 def _build_convert_cmd(
@@ -24,7 +42,10 @@ def _build_convert_cmd(
     ffmpeg_path: str,
     mode: str,
 ) -> list[str]:
-    base = [ffmpeg_path, "-i", str(ts_path)]
+    if mode == "qsv":
+        base = [ffmpeg_path, "-qsv_device", CONVERT_QSV_DEVICE, "-i", str(ts_path)]
+    else:
+        base = [ffmpeg_path, "-i", str(ts_path)]
 
     if mode == "copy":
         # Remux only: no video/audio re-encoding, minimal CPU usage.
@@ -88,7 +109,7 @@ async def convert_ts_to_mp4(
     
     # Générer le nom du fichier MP4 si non fourni
     if mp4_path is None:
-        mp4_path = ts_path.with_suffix('.mp4')
+        mp4_path = _build_mp4_path_from_ts(ts_path)
     
     logger.info("Conversion TS->MP4 démarrée", 
                ts_file=ts_path.name, 
@@ -251,7 +272,7 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                         continue
 
                     # Vérifier si le MP4 existe déjà
-                    mp4_path = ts_path.with_suffix('.mp4')
+                    mp4_path = _build_mp4_path_from_ts(ts_path)
                     if mp4_path.exists():
                         logger.debug("MP4 existe déjà, skip conversion",
                                    username=username,

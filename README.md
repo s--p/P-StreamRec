@@ -83,10 +83,12 @@ docker run -d --name p-streamrec \
 | `FLARESOLVERR_URL` | — | FlareSolverr URL (e.g. `http://flaresolverr:8191`) |
 | `AUTO_CONVERT_WHILE_RECORDING` | `false` | Convert only when no live recording is active |
 | `CONVERT_MODE` | `reencode` | `reencode` (x264), `copy` (no re-encode), `qsv` (Intel QuickSync) |
+| `CONVERT_QSV_DEVICE` | `/dev/dri/renderD128` | QSV render device path inside container |
 | `CONVERT_PRESET` | `medium` | FFmpeg preset for `reencode`/`qsv` |
 | `CONVERT_CRF` | `23` | Quality target for `reencode` mode |
 | `CONVERT_COPY_AUDIO` | `true` | Copy audio stream instead of re-encoding |
 | `CONVERT_AUDIO_BITRATE` | `128k` | Audio bitrate when audio is re-encoded |
+| `LIBVA_DRIVER_NAME` | `iHD` | Intel VA driver used by FFmpeg/QSV |
 | `TZ` | `UTC` | Timezone (e.g. `America/Toronto`) |
 
 ## Usage
@@ -101,7 +103,7 @@ docker run -d --name p-streamrec \
 ### Recording format
 
 - Original: `/data/records/<username>/YYYYMMDD_HHMMSS_ID.ts` (MPEG-TS, lossless)
-- Converted: `/data/records/<username>/YYYYMMDD_HHMMSS_ID.mp4` (H.264, auto-generated)
+- Converted: `/data/records/<username>/<username>YYYYMMDD_HHMMSS_recorded.mp4` (H.264, auto-generated)
 
 ### Storage estimates
 
