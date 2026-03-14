@@ -22,6 +22,20 @@ def set_chaturbate_api(api):
     _chaturbate_api = api
 
 
+def _prefer_playlist_url(m3u8_url: str) -> str:
+    """Prefer stable playlist URLs over short-lived chunklist URLs."""
+    if not m3u8_url:
+        return m3u8_url
+
+    normalized = m3u8_url.strip().replace("\\/", "/")
+    normalized = html.unescape(normalized)
+
+    # Convert signed chunklist variants to playlist.m3u8 when possible.
+    # Example: .../chunklist_w123_b456_tXXX.m3u8 -> .../playlist.m3u8
+    normalized = re.sub(r"chunklist[^/?]*\.m3u8", "playlist.m3u8", normalized)
+    return normalized
+
+
 def _extract_m3u8_from_html_content(html_content: str, username: str) -> Optional[str]:
     """Extract best-effort m3u8 URL from Chaturbate HTML content."""
     m3u8_patterns = [
@@ -54,6 +68,7 @@ def _extract_m3u8_from_html_content(html_content: str, username: str) -> Optiona
 
         m3u8_url = re.sub(r'u([0-9a-fA-F]{4})', decode_unicode, m3u8_url)
         m3u8_url = m3u8_url.rstrip('",;: \t\n\r')
+        m3u8_url = _prefer_playlist_url(m3u8_url)
 
         if m3u8_url.startswith("http") and ".m3u8" in m3u8_url:
             logger.success("M3U8 extrait depuis HTML", username=username, pattern=i)
@@ -106,31 +121,8 @@ async def resolve_m3u8_async(username: str) -> str:
 
 
 async def _resolve_best_quality(m3u8_url: str) -> str:
-    """If URL is a master playlist, extract the highest quality variant"""
-    if 'playlist.m3u8' not in m3u8_url:
-        return m3u8_url
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            }
-            async with session.get(
-                m3u8_url, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=10), ssl=False
-            ) as resp:
-                if resp.status == 200:
-                    text = await resp.text()
-                    lines = text.strip().split('\n')
-                    for line in reversed(lines):
-                        line = line.strip()
-                        if line and not line.startswith('#'):
-                            base_url = m3u8_url.rsplit('/', 1)[0]
-                            return f"{base_url}/{line}"
-    except Exception as e:
-        logger.debug("Could not extract best quality from playlist", error=str(e))
-
-    return m3u8_url
+    """Normalize to a stable playlist URL to avoid stream expiry flapping."""
+    return _prefer_playlist_url(m3u8_url)
 
 
 def resolve_m3u8(username: str) -> str:
@@ -188,25 +180,7 @@ def resolve_m3u8(username: str) -> str:
                     break
 
             if best_m3u8:
-                # ASTUCE: Si c'est un playlist.m3u8, charger et prendre la dernière ligne (meilleure qualité)
-                if 'playlist.m3u8' in best_m3u8:
-                    try:
-                        logger.debug("Extraction meilleure qualité du playlist", username=username)
-                        playlist_resp = requests.get(best_m3u8, headers=headers, timeout=10)
-                        if playlist_resp.status_code == 200:
-                            lines = playlist_resp.text.strip().split('\n')
-                            # La dernière ligne non-vide qui n'est pas un commentaire est la meilleure qualité
-                            for line in reversed(lines):
-                                line = line.strip()
-                                if line and not line.startswith('#'):
-                                    # C'est un chemin relatif, construire l'URL complète
-                                    base_url = best_m3u8.rsplit('/', 1)[0]
-                                    best_m3u8 = f"{base_url}/{line}"
-                                    logger.success("Meilleure qualité extraite du playlist", username=username)
-                                    break
-                    except Exception as e:
-                        logger.warning("Impossible d'extraire meilleure qualité du playlist, utilisation URL brute",
-                                     username=username, error=str(e))
+                best_m3u8 = _prefer_playlist_url(best_m3u8)
 
                 logger.success("M3U8 résolu via API", username=username)
                 return best_m3u8
