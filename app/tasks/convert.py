@@ -44,6 +44,8 @@ def _build_convert_cmd(
 ) -> list[str]:
     if mode == "qsv":
         base = [ffmpeg_path, "-qsv_device", CONVERT_QSV_DEVICE, "-i", str(ts_path)]
+    elif mode == "vaapi":
+        base = [ffmpeg_path, "-vaapi_device", CONVERT_QSV_DEVICE, "-i", str(ts_path)]
     else:
         base = [ffmpeg_path, "-i", str(ts_path)]
 
@@ -60,6 +62,19 @@ def _build_convert_cmd(
         cmd = base + [
             "-c:v", "h264_qsv",
             "-preset", CONVERT_PRESET,
+        ]
+        if CONVERT_COPY_AUDIO:
+            cmd += ["-c:a", "copy"]
+        else:
+            cmd += ["-c:a", "aac", "-b:a", CONVERT_AUDIO_BITRATE]
+        cmd += ["-movflags", "+faststart", "-y", str(mp4_path)]
+        return cmd
+
+    if mode == "vaapi":
+        cmd = base + [
+            "-vf", "format=nv12,hwupload",
+            "-c:v", "h264_vaapi",
+            "-qp", str(CONVERT_CRF),
         ]
         if CONVERT_COPY_AUDIO:
             cmd += ["-c:a", "copy"]
@@ -115,7 +130,7 @@ async def convert_ts_to_mp4(
                ts_file=ts_path.name, 
                mp4_file=mp4_path.name)
     
-    mode = CONVERT_MODE if CONVERT_MODE in {"reencode", "copy", "qsv"} else "reencode"
+    mode = CONVERT_MODE if CONVERT_MODE in {"reencode", "copy", "qsv", "vaapi"} else "reencode"
     cmd = _build_convert_cmd(ts_path, mp4_path, ffmpeg_path, mode)
     
     try:
@@ -124,10 +139,26 @@ async def convert_ts_to_mp4(
 
         returncode, stdout, stderr = await _run_ffmpeg_command(cmd)
 
-        # Fallback to software profile if QSV is not available in runtime/container.
+        # Hardware fallback chain to keep CPU lower when possible.
         if returncode != 0 and mode == "qsv":
             logger.warning(
-                "Échec QSV, fallback libx264",
+                "Échec QSV, fallback VAAPI",
+                ts_file=ts_path.name,
+            )
+            fallback_cmd = _build_convert_cmd(ts_path, mp4_path, ffmpeg_path, "vaapi")
+            returncode, stdout, stderr = await _run_ffmpeg_command(fallback_cmd)
+
+            if returncode != 0:
+                logger.warning(
+                    "Échec VAAPI, fallback libx264",
+                    ts_file=ts_path.name,
+                )
+                fallback_cmd = _build_convert_cmd(ts_path, mp4_path, ffmpeg_path, "reencode")
+                returncode, stdout, stderr = await _run_ffmpeg_command(fallback_cmd)
+
+        if returncode != 0 and mode == "vaapi":
+            logger.warning(
+                "Échec VAAPI, fallback libx264",
                 ts_file=ts_path.name,
             )
             fallback_cmd = _build_convert_cmd(ts_path, mp4_path, ffmpeg_path, "reencode")

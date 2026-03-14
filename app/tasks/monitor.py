@@ -6,6 +6,7 @@ import asyncio
 import aiohttp
 import subprocess
 import os
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 from datetime import datetime
@@ -411,6 +412,16 @@ async def monitor_models_task(
     async with aiohttp.ClientSession() as session:
         # Track transient request failures to avoid online/offline flicker.
         consecutive_status_failures = {}
+        # Track restart attempts to avoid start storms when upstream is unstable.
+        restart_attempts = {}
+
+        try:
+            restart_cooldown_seconds = max(
+                10,
+                int(os.getenv("MONITOR_AUTORECORD_RESTART_COOLDOWN", "45"))
+            )
+        except ValueError:
+            restart_cooldown_seconds = 45
 
         while True:
             try:
@@ -464,6 +475,82 @@ async def monitor_models_task(
                             None
                         )
                         is_recording = active_session is not None
+                        auto_record_enabled = bool(model.get('auto_record', True))
+
+                        # Fast recovery path: if auto-record is enabled and model appears online,
+                        # try to restart a dropped recording without waiting for the slower auto-record task.
+                        if (
+                            auto_record_enabled
+                            and not is_recording
+                            and effective_online
+                            and status_request_ok
+                            and chaturbate_api
+                        ):
+                            now = time.time()
+                            last_try = restart_attempts.get(username, 0)
+
+                            if now - last_try >= restart_cooldown_seconds:
+                                restart_attempts[username] = now
+                                recovered_hls = None
+
+                                try:
+                                    from ..resolvers.chaturbate import resolve_m3u8_async
+                                    recovered_hls = await resolve_m3u8_async(username)
+                                except Exception as e:
+                                    logger.debug(
+                                        "Recovery resolver async échoué",
+                                        username=username,
+                                        error=str(e),
+                                    )
+
+                                if not recovered_hls:
+                                    try:
+                                        recovered_hls = await chaturbate_api.get_edge_hls_url(username)
+                                    except Exception as e:
+                                        logger.debug(
+                                            "Recovery edge hls échoué",
+                                            username=username,
+                                            error=str(e),
+                                        )
+
+                                if recovered_hls:
+                                    try:
+                                        sess = manager.start_session(
+                                            input_url=recovered_hls,
+                                            person=username,
+                                            display_name=username,
+                                        )
+                                        if sess:
+                                            is_recording = True
+                                            logger.success(
+                                                "Recovery auto-record démarré",
+                                                task="monitor",
+                                                username=username,
+                                                session_id=sess.id,
+                                            )
+                                    except RuntimeError as e:
+                                        logger.debug(
+                                            "Recovery skip (session déjà active)",
+                                            username=username,
+                                            error=str(e),
+                                        )
+                                    except Exception as e:
+                                        logger.warning(
+                                            "Recovery auto-record échoué",
+                                            task="monitor",
+                                            username=username,
+                                            error=str(e),
+                                        )
+                                else:
+                                    logger.debug(
+                                        "Recovery: pas de HLS disponible",
+                                        task="monitor",
+                                        username=username,
+                                    )
+                        else:
+                            # Reset attempt timer when model is offline or already recording.
+                            if is_recording or not effective_online:
+                                restart_attempts.pop(username, None)
                         
                         # Générer/mettre à jour la miniature
                         thumbnail_path = None

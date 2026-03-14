@@ -44,6 +44,7 @@ PASSWORD = os.getenv("PASSWORD", "")  # Mot de passe optionnel
 CHATURBATE_USERNAME = os.getenv("CHATURBATE_USERNAME", "")
 CHATURBATE_PASSWORD = os.getenv("CHATURBATE_PASSWORD", "")
 FLARESOLVERR_URL = os.getenv("FLARESOLVERR_URL", "http://flaresolverr:8191")
+AUTO_RECORD_INTERVAL = int(os.getenv("AUTO_RECORD_INTERVAL", "120"))
 
 # Docker constants
 DOCKER_SOCKET = '/var/run/docker.sock'
@@ -2034,7 +2035,7 @@ async def auto_record_task():
     """Vérifie automatiquement les modèles et lance les enregistrements (utilise SQLite)"""
     while True:
         try:
-            await asyncio.sleep(120)  # Vérifier toutes les 2 minutes
+            await asyncio.sleep(AUTO_RECORD_INTERVAL)
             
             # Charger les modèles depuis SQLite avec auto_record activé
             models = await db.get_models_for_auto_record()
