@@ -22,6 +22,46 @@ def set_chaturbate_api(api):
     _chaturbate_api = api
 
 
+def _extract_m3u8_from_html_content(html_content: str, username: str) -> Optional[str]:
+    """Extract best-effort m3u8 URL from Chaturbate HTML content."""
+    m3u8_patterns = [
+        r'"(https?://[^"]*\.m3u8[^"]*)"',
+        r"'(https?://[^']*\.m3u8[^']*)'",
+        r'hls_source["\s:=]+(["\'])(https?://[^"\']+\.m3u8[^"\']*)\1',
+        r'hlsSource["\s:=]+(["\'])(https?://[^"\']+\.m3u8[^"\']*)\1',
+        r'm3u8["\s:=]+(["\'])(https?://[^"\']+\.m3u8[^"\']*)\1',
+        r'(https?:\\?/\\?/[^"\'\\s]+\.m3u8[^"\'\\s]*)',
+        r'"url"["\s:]+(["\'])(https?://[^"\']+\.m3u8[^"\']*)\1',
+        r'(https?://[^\s"\'<>]+\.m3u8[^\s"\'<>]*)',
+    ]
+
+    for i, pattern in enumerate(m3u8_patterns, 1):
+        matches = re.findall(pattern, html_content, re.IGNORECASE)
+        if not matches:
+            continue
+
+        if isinstance(matches[0], tuple):
+            groups = [g for g in matches[0] if g and 'http' in g]
+            m3u8_url = groups[0] if groups else matches[0][-1]
+        else:
+            m3u8_url = matches[0]
+
+        m3u8_url = m3u8_url.replace("\\/", "/").replace("\\", "")
+        m3u8_url = html.unescape(m3u8_url)
+
+        def decode_unicode(match):
+            return chr(int(match.group(1), 16))
+
+        m3u8_url = re.sub(r'u([0-9a-fA-F]{4})', decode_unicode, m3u8_url)
+        m3u8_url = m3u8_url.rstrip('",;: \t\n\r')
+
+        if m3u8_url.startswith("http") and ".m3u8" in m3u8_url:
+            logger.success("M3U8 extrait depuis HTML", username=username, pattern=i)
+            return m3u8_url
+
+    return None
+
+
 async def resolve_m3u8_async(username: str) -> str:
     """
     Async M3U8 resolver with authentication support.
@@ -46,7 +86,22 @@ async def resolve_m3u8_async(username: str) -> str:
         except Exception as e:
             logger.debug("Auth resolution failed, falling back", error=str(e))
 
-    # Method 2 & 3: Fallback to sync resolver
+        # Method 2: FlareSolverr profile-page fallback and HTML parse.
+        try:
+            fs = getattr(_chaturbate_api, "flaresolverr", None)
+            if fs:
+                profile_url = f"https://chaturbate.com/{username}/"
+                solved = await fs.solve_challenge(profile_url)
+                response_body = solved.get("response") if solved else None
+                if isinstance(response_body, str) and response_body:
+                    m3u8_url = _extract_m3u8_from_html_content(response_body, username)
+                    if m3u8_url:
+                        logger.success("M3U8 résolu via FlareSolverr HTML fallback", username=username)
+                        return await _resolve_best_quality(m3u8_url)
+        except Exception as e:
+            logger.debug("FlareSolverr HTML fallback failed", username=username, error=str(e))
+
+    # Method 3 & 4: Fallback to sync resolver
     return resolve_m3u8(username)
 
 
@@ -177,61 +232,10 @@ def resolve_m3u8(username: str) -> str:
         html_content = resp.text
         logger.debug("Page HTML récupérée", username=username, size_chars=len(html_content))
 
-        # Chercher le M3U8 avec patterns multiples et variés
-        m3u8_patterns = [
-            # URLs directes entre guillemets
-            r'"(https?://[^"]*\.m3u8[^"]*)"',
-            r"'(https?://[^']*\.m3u8[^']*)'",
-            # Dans variables JavaScript
-            r'hls_source["\s:=]+(["\'])(https?://[^"\']+\.m3u8[^"\']*)\1',
-            r'hlsSource["\s:=]+(["\'])(https?://[^"\']+\.m3u8[^"\']*)\1',
-            r'm3u8["\s:=]+(["\'])(https?://[^"\']+\.m3u8[^"\']*)\1',
-            # URL encodée (avec antislash)
-            r'(https?:\\?/\\?/[^"\'\\s]+\.m3u8[^"\'\\s]*)',
-            # Dans JSON
-            r'"url"["\s:]+(["\'])(https?://[^"\']+\.m3u8[^"\']*)\1',
-            # Pattern large pour tout .m3u8
-            r'(https?://[^\s"\'<>]+\.m3u8[^\s"\'<>]*)',
-        ]
-
-        logger.debug("Recherche M3U8 avec patterns",
-                    username=username,
-                    pattern_count=len(m3u8_patterns))
-
-        for i, pattern in enumerate(m3u8_patterns, 1):
-            logger.debug("Test pattern regex", username=username, pattern_num=f"{i}/{len(m3u8_patterns)}")
-            matches = re.findall(pattern, html_content, re.IGNORECASE)
-
-            if matches:
-                logger.debug("Pattern match trouvé", username=username, pattern_index=i, matches=len(matches))
-                # Prendre le premier match (ou le groupe capturé)
-                if isinstance(matches[0], tuple):
-                    # Si c'est un tuple (groupes capturés), prendre le dernier élément non vide
-                    m3u8_url = [g for g in matches[0] if g and 'http' in g][0] if matches[0] else matches[0][-1]
-                else:
-                    m3u8_url = matches[0]
-
-                # Nettoyer l'URL
-                m3u8_url = m3u8_url.replace("\\/", "/").replace("\\", "")
-
-                # Décoder les entités Unicode (u002D = -, u0022 = ", etc.)
-                m3u8_url = html.unescape(m3u8_url)
-
-                # Remplacer les codes Unicode hexadécimaux
-                def decode_unicode(match):
-                    return chr(int(match.group(1), 16))
-                m3u8_url = re.sub(r'u([0-9a-fA-F]{4})', decode_unicode, m3u8_url)
-
-                # Supprimer les caractères parasites à la fin
-                m3u8_url = m3u8_url.rstrip('",;: \t\n\r')
-
-                logger.debug("M3U8 candidat trouvé", username=username)
-
-                if m3u8_url.startswith("http") and ".m3u8" in m3u8_url:
-                    logger.success("M3U8 résolu avec succès", username=username, pattern=i)
-                    return m3u8_url
-                else:
-                    logger.debug("URL candidat invalide", username=username)
+        logger.debug("Recherche M3U8 via extracteur HTML", username=username)
+        extracted_m3u8 = _extract_m3u8_from_html_content(html_content, username)
+        if extracted_m3u8:
+            return extracted_m3u8
 
         # Si pas trouvé, vérifier si hors ligne
         logger.warning("Aucun M3U8 trouvé, vérification statut", username=username)
