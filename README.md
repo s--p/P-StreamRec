@@ -77,7 +77,8 @@ docker run -d --name p-streamrec \
 | `CB_RESOLVER_ENABLED` | `true` | Enable Chaturbate support |
 | `CB_REQUEST_DELAY` | `1.0` | Delay between Chaturbate requests (seconds) |
 | `AUTO_RECORD_INTERVAL` | `120` | Interval between auto-record checks (seconds) |
-| `MONITOR_AUTORECORD_RESTART_COOLDOWN` | `45` | Cooldown between monitor recovery start attempts (seconds) |
+| `MONITOR_INTERVAL` | `10` | Monitor status check interval (seconds) |
+| `MONITOR_AUTORECORD_RESTART_COOLDOWN` | `10` | Cooldown between monitor recovery start attempts (seconds) |
 | `RECORD_SEGMENT_MINUTES` | `0` | TS segment duration in minutes (`0` = one continuous file) |
 | `FFMPEG_RECONNECT_DELAY_MAX` | `30` | Max delay between FFmpeg reconnect attempts (seconds) |
 | `FFMPEG_RECONNECT_ON_HTTP_ERROR` | `4xx,5xx` | HTTP status classes that trigger FFmpeg reconnect |

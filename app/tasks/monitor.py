@@ -20,8 +20,15 @@ from ..logger import logger
 from ..core.config import OUTPUT_DIR
 
 # Intervalle de vérification (en secondes)
-MONITOR_INTERVAL = 30  # Vérifie toutes les 30 secondes
-THUMBNAIL_UPDATE_INTERVAL = 60  # Miniature mise à jour toutes les 60 secondes
+try:
+    MONITOR_INTERVAL = max(5, int(os.getenv("MONITOR_INTERVAL", "10")))
+except ValueError:
+    MONITOR_INTERVAL = 10
+
+try:
+    THUMBNAIL_UPDATE_INTERVAL = max(15, int(os.getenv("THUMBNAIL_UPDATE_INTERVAL", "60")))
+except ValueError:
+    THUMBNAIL_UPDATE_INTERVAL = 60
 
 async def check_model_status(
     session: aiohttp.ClientSession,
@@ -417,11 +424,11 @@ async def monitor_models_task(
 
         try:
             restart_cooldown_seconds = max(
-                10,
-                int(os.getenv("MONITOR_AUTORECORD_RESTART_COOLDOWN", "45"))
+                5,
+                int(os.getenv("MONITOR_AUTORECORD_RESTART_COOLDOWN", "10"))
             )
         except ValueError:
-            restart_cooldown_seconds = 45
+            restart_cooldown_seconds = 10
 
         while True:
             try:
