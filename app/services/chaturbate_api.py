@@ -106,7 +106,7 @@ class ChaturbateAPI:
                                 status=resp.status,
                                 content_type=resp.content_type,
                             )
-                            solution = await self.flaresolverr.solve_challenge(url)
+                            solution = await self.flaresolverr.solve_challenge(url, headers=headers)
                             if solution:
                                 retry_headers = dict(headers)
                                 cookies = solution.get("cookies", {})

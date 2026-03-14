@@ -185,7 +185,7 @@ class ChaturbateAuthService:
                     if resp.status == 403 and self.flaresolverr:
                         # Cloudflare block - use FlareSolverr
                         logger.info("Cloudflare detected, using FlareSolverr")
-                        solution = await self.flaresolverr.solve_challenge(url)
+                        solution = await self.flaresolverr.solve_challenge(url, headers=headers)
                         if solution:
                             cookies.update(solution.get("cookies", {}))
                             self._user_agent = solution.get("user_agent", self._user_agent)
