@@ -1793,7 +1793,11 @@ async def is_following_model(username: str):
 
 @app.patch("/api/models/{username}/auto-record")
 async def toggle_auto_record(username: str, body: dict):
-    """Toggle auto-record for a model"""
+    """Toggle auto-record for a model.
+
+    When disabling auto-record, any active recording sessions for this model are
+    stopped immediately to match user expectation from the UI toggle.
+    """
     existing = await db.get_model(username)
     if not existing:
         raise HTTPException(status_code=404, detail="Model not found")
@@ -1802,13 +1806,28 @@ async def toggle_auto_record(username: str, body: dict):
     if auto_record is None:
         raise HTTPException(status_code=400, detail="autoRecord field required")
 
+    new_auto_record = bool(auto_record)
+
     await db.add_or_update_model(
         username=username,
-        auto_record=bool(auto_record),
+        auto_record=new_auto_record,
         record_quality=existing.get("record_quality", "best"),
         retention_days=existing.get("retention_days", 30)
     )
-    return {"success": True, "autoRecord": bool(auto_record)}
+
+    stopped_sessions = []
+    if not new_auto_record:
+        for session in manager.list_status():
+            if session.get("running") and session.get("person") == username:
+                session_id = session.get("id")
+                if session_id and manager.stop_session(session_id):
+                    stopped_sessions.append(session_id)
+
+    return {
+        "success": True,
+        "autoRecord": new_auto_record,
+        "stoppedSessions": stopped_sessions,
+    }
 
 
 # ============================================

@@ -81,6 +81,12 @@ docker run -d --name p-streamrec \
 | `CHATURBATE_USERNAME` | — | Chaturbate login (optional, enables Following + better quality) |
 | `CHATURBATE_PASSWORD` | — | Chaturbate password (optional) |
 | `FLARESOLVERR_URL` | — | FlareSolverr URL (e.g. `http://flaresolverr:8191`) |
+| `AUTO_CONVERT_WHILE_RECORDING` | `false` | Convert only when no live recording is active |
+| `CONVERT_MODE` | `reencode` | `reencode` (x264), `copy` (no re-encode), `qsv` (Intel QuickSync) |
+| `CONVERT_PRESET` | `medium` | FFmpeg preset for `reencode`/`qsv` |
+| `CONVERT_CRF` | `23` | Quality target for `reencode` mode |
+| `CONVERT_COPY_AUDIO` | `true` | Copy audio stream instead of re-encoding |
+| `CONVERT_AUDIO_BITRATE` | `128k` | Audio bitrate when audio is re-encoded |
 | `TZ` | `UTC` | Timezone (e.g. `America/Toronto`) |
 
 ## Usage
@@ -88,8 +94,9 @@ docker run -d --name p-streamrec \
 1. **Add a model** — click **+**, enter a Chaturbate username or m3u8 URL
 2. **Auto-record** — the system checks every 2 minutes and records when live
 3. **Auto-convert** — when the stream ends, TS is converted to MP4 automatically
-4. **Watch live** — click a model card to open the live player
-5. **Browse replays** — go to the Recordings page to watch or delete recordings
+4. **CPU-friendly queue behavior** — by default, conversion waits while live recordings are running
+5. **Watch live** — click a model card to open the live player
+6. **Browse replays** — go to the Recordings page to watch or delete recordings
 
 ### Recording format
 
