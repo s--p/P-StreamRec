@@ -10,17 +10,25 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     APP_VERSION=${APP_VERSION}
 
 # Install ffmpeg and build dependencies for native packages (psutil on arm64)
-RUN apt-get update && \
-        apt-get install -y --no-install-recommends \
-            ffmpeg \
-            ca-certificates \
-            gcc \
-            python3-dev \
-            libmfx1 \
-            libva2 \
-            libva-drm2 \
-            vainfo && \
-        (apt-get install -y --no-install-recommends intel-media-va-driver || apt-get install -y --no-install-recommends i965-va-driver) && \
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+        ca-certificates \
+        gcc \
+        python3-dev \
+        libva2 \
+        libva-drm2 \
+        vainfo; \
+    arch="$(dpkg --print-architecture)"; \
+    if [ "$arch" = "amd64" ]; then \
+        # Optional Intel media stack for QSV; install only if package exists on this distro.
+        for pkg in libmfx1 intel-media-va-driver i965-va-driver; do \
+            if apt-cache show "$pkg" >/dev/null 2>&1; then \
+                apt-get install -y --no-install-recommends "$pkg"; \
+            fi; \
+        done; \
+    fi; \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
