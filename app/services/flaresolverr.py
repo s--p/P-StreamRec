@@ -63,7 +63,11 @@ class FlareSolverrClient:
                 logger.debug("FlareSolverr not available", error=str(e), url=self.base_url)
         return False
 
-    async def solve_challenge(self, url: str) -> Optional[Dict[str, Any]]:
+    async def solve_challenge(
+        self,
+        url: str,
+        headers: Optional[Dict[str, str]] = None,
+    ) -> Optional[Dict[str, Any]]:
         """
         Solve a Cloudflare challenge via FlareSolverr.
         Returns dict with 'cookies' and 'user_agent' on success.
@@ -90,6 +94,27 @@ class FlareSolverrClient:
                     "url": url,
                     "maxTimeout": FLARESOLVERR_MAX_TIMEOUT
                 }
+
+                # Forward useful request context (especially auth cookies) so
+                # JSON API endpoints don't degrade to HTML login pages.
+                if headers:
+                    allowed_headers = {
+                        "Accept",
+                        "Accept-Language",
+                        "Content-Type",
+                        "Cookie",
+                        "Origin",
+                        "Referer",
+                        "User-Agent",
+                        "X-CSRFToken",
+                        "X-Requested-With",
+                    }
+                    forwarded = {}
+                    for key, value in headers.items():
+                        if key in allowed_headers and value:
+                            forwarded[key] = value
+                    if forwarded:
+                        payload["headers"] = forwarded
 
                 logger.info("Solving Cloudflare challenge via FlareSolverr", url=url)
 
