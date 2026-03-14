@@ -45,6 +45,7 @@ CHATURBATE_USERNAME = os.getenv("CHATURBATE_USERNAME", "")
 CHATURBATE_PASSWORD = os.getenv("CHATURBATE_PASSWORD", "")
 FLARESOLVERR_URL = os.getenv("FLARESOLVERR_URL", "http://flaresolverr:8191")
 AUTO_RECORD_INTERVAL = int(os.getenv("AUTO_RECORD_INTERVAL", "120"))
+RECORD_SEGMENT_MINUTES = max(0, int(os.getenv("RECORD_SEGMENT_MINUTES", "0")))
 
 # Docker constants
 DOCKER_SOCKET = '/var/run/docker.sock'
@@ -314,7 +315,13 @@ async def serve_recording_protected(request: Request, username: str, filename: s
 app.mount("/streams/sessions", StaticFiles(directory=str(OUTPUT_DIR / "sessions")), name="streams_sessions")
 app.mount("/streams/thumbnails", StaticFiles(directory=str(OUTPUT_DIR / "thumbnails")), name="streams_thumbnails")
 
-manager = FFmpegManager(str(OUTPUT_DIR), ffmpeg_path=FFMPEG_PATH, hls_time=HLS_TIME, hls_list_size=HLS_LIST_SIZE)
+manager = FFmpegManager(
+    str(OUTPUT_DIR),
+    ffmpeg_path=FFMPEG_PATH,
+    hls_time=HLS_TIME,
+    hls_list_size=HLS_LIST_SIZE,
+    record_segment_minutes=RECORD_SEGMENT_MINUTES,
+)
 
 # Database SQLite
 DB_FILE = OUTPUT_DIR / "streamrec.db"
@@ -1697,14 +1704,15 @@ async def set_blacklisted_tags(body: dict):
 
 @app.get("/api/settings/recording")
 async def get_recording_settings():
-    """Get recording settings (auto_convert, keep_ts, show_ts_files, auto_delete_watched, auto_delete_threshold)"""
-    from .core.config import AUTO_CONVERT, KEEP_TS
+    """Get recording settings for conversion/cleanup and recording segment duration."""
+    from .core.config import AUTO_CONVERT, KEEP_TS, RECORD_SEGMENT_MINUTES
 
     auto_convert_val = await db.get_setting("auto_convert")
     keep_ts_val = await db.get_setting("keep_ts")
     show_ts_val = await db.get_setting("show_ts_files")
     auto_delete_val = await db.get_setting("auto_delete_watched")
     auto_delete_threshold_val = await db.get_setting("auto_delete_threshold")
+    record_segment_minutes_val = await db.get_setting("record_segment_minutes")
 
     # Fall back to env var defaults if not set in DB
     if auto_convert_val is not None:
@@ -1725,18 +1733,25 @@ async def get_recording_settings():
     except (ValueError, TypeError):
         auto_delete_threshold = 90
 
+    try:
+        record_segment_minutes = int(record_segment_minutes_val) if record_segment_minutes_val is not None else RECORD_SEGMENT_MINUTES
+        record_segment_minutes = max(0, record_segment_minutes)
+    except (ValueError, TypeError):
+        record_segment_minutes = RECORD_SEGMENT_MINUTES
+
     return {
         "auto_convert": auto_convert,
         "keep_ts": keep_ts,
         "show_ts_files": show_ts_files,
         "auto_delete_watched": auto_delete_watched,
         "auto_delete_threshold": auto_delete_threshold,
+        "record_segment_minutes": record_segment_minutes,
     }
 
 
 @app.put("/api/settings/recording")
 async def update_recording_settings(body: dict):
-    """Update recording settings (auto_convert, keep_ts, show_ts_files, auto_delete_watched, auto_delete_threshold)"""
+    """Update recording settings (conversion, cleanup, segment duration)."""
     if "auto_convert" in body:
         await db.set_setting("auto_convert", str(body["auto_convert"]).lower())
     if "keep_ts" in body:
@@ -1748,6 +1763,13 @@ async def update_recording_settings(body: dict):
     if "auto_delete_threshold" in body:
         threshold = max(0, min(100, int(body["auto_delete_threshold"])))
         await db.set_setting("auto_delete_threshold", str(threshold))
+    if "record_segment_minutes" in body:
+        try:
+            segment_minutes = max(0, int(body["record_segment_minutes"]))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="record_segment_minutes must be an integer >= 0")
+        await db.set_setting("record_segment_minutes", str(segment_minutes))
+        manager.set_record_segment_minutes(segment_minutes)
 
     # Return current state
     return await get_recording_settings()
@@ -2301,6 +2323,14 @@ async def startup_event():
     """Démarre les background tasks au démarrage de l'application"""
     # Initialiser la base de données
     await db.initialize()
+
+    # Apply runtime-overridable recording segment duration from DB.
+    try:
+        segment_minutes_val = await db.get_setting("record_segment_minutes")
+        if segment_minutes_val is not None:
+            manager.set_record_segment_minutes(max(0, int(segment_minutes_val)))
+    except Exception as e:
+        logger.warning("Impossible charger record_segment_minutes depuis DB", error=str(e))
 
     # Migrer les données depuis le JSON si nécessaire
     await db.migrate_from_json(MODELS_FILE)

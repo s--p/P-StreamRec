@@ -76,6 +76,9 @@ docker run -d --name p-streamrec \
 | `FFMPEG_PATH` | `ffmpeg` | Path to FFmpeg |
 | `CB_RESOLVER_ENABLED` | `true` | Enable Chaturbate support |
 | `CB_REQUEST_DELAY` | `1.0` | Delay between Chaturbate requests (seconds) |
+| `AUTO_RECORD_INTERVAL` | `120` | Interval between auto-record checks (seconds) |
+| `MONITOR_AUTORECORD_RESTART_COOLDOWN` | `45` | Cooldown between monitor recovery start attempts (seconds) |
+| `RECORD_SEGMENT_MINUTES` | `0` | TS segment duration in minutes (`0` = one continuous file) |
 | `PASSWORD` | — | Password to protect the interface (optional) |
 | `AUTO_RECORD_USERS` | — | Comma-separated usernames to auto-record |
 | `CHATURBATE_USERNAME` | — | Chaturbate login (optional, enables Following + better quality) |

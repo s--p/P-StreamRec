@@ -189,6 +189,25 @@
                   <span class="toggle-slider"></span>
                 </label>
               </div>
+              <div class="settings-row">
+                <div>
+                  <span class="settings-row-label">Recording Segment Duration (minutes)</span>
+                  <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">0 = continuous single TS file. Any value &gt; 0 rotates to a new TS file after that many minutes.</p>
+                </div>
+                <div style="display:flex; align-items:center; gap:0.5rem;">
+                  <input
+                    type="number"
+                    id="segmentMinutesInput"
+                    min="0"
+                    max="360"
+                    step="1"
+                    value="0"
+                    style="width: 90px; padding: 0.4rem 0.55rem; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-secondary); color: var(--text-primary);"
+                    onchange="updateRecordingSegmentMinutes(this.value)"
+                  />
+                  <span style="font-size: 0.85rem; color: var(--text-muted);">min</span>
+                </div>
+              </div>
               <div class="settings-row" style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 0.5rem;">
                 <div>
                   <span class="settings-row-label">Auto-Delete After Watching</span>

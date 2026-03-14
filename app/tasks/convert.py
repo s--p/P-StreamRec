@@ -254,6 +254,8 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
     while True:
         try:
             await asyncio.sleep(30)  # Vérifier toutes les 30 secondes
+            converted_this_cycle = False
+            pause_queue_this_cycle = False
 
             # Read settings from DB each iteration (runtime changeable)
             auto_convert, keep_ts = await _get_recording_settings(db)
@@ -289,10 +291,30 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                 if not user_dir.is_dir():
                     continue
 
+                if converted_this_cycle or pause_queue_this_cycle:
+                    break
+
                 username = user_dir.name
 
                 # Scanner TOUS les fichiers .ts dans le dossier de l'utilisateur
                 for ts_file in user_dir.glob("*.ts"):
+                    if converted_this_cycle or pause_queue_this_cycle:
+                        break
+
+                    # Re-check active recordings before each file so queued conversions
+                    # pause quickly when a model goes live again.
+                    if not AUTO_CONVERT_WHILE_RECORDING:
+                        current_active_count = sum(
+                            1 for s in ffmpeg_manager.list_status() if s.get("running")
+                        )
+                        if current_active_count > 0:
+                            logger.debug(
+                                "Queue conversion pausée (nouvelle session active)",
+                                active_count=current_active_count,
+                            )
+                            pause_queue_this_cycle = True
+                            break
+
                     ts_path = Path(ts_file)
 
                     # Vérifier si ce fichier est en cours d'enregistrement
@@ -449,6 +471,9 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                         logger.error("Échec conversion",
                                    username=username,
                                    filename=ts_file.name)
+
+                    # Process one file at a time; remaining queue is handled in next cycles.
+                    converted_this_cycle = True
 
                     # Attendre un peu entre chaque conversion pour éviter surcharge
                     await asyncio.sleep(5)

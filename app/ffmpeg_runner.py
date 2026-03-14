@@ -9,7 +9,16 @@ from .logger import logger
 
 
 class FFmpegSession:
-    def __init__(self, session_id: str, input_url: str, sessions_dir: str, records_dir_for_person: str, person: str, display_name: Optional[str] = None):
+    def __init__(
+        self,
+        session_id: str,
+        input_url: str,
+        sessions_dir: str,
+        records_dir_for_person: str,
+        person: str,
+        display_name: Optional[str] = None,
+        record_segment_minutes: int = 0,
+    ):
         self.id = session_id
         self.input_url = input_url
         self.sessions_dir = sessions_dir
@@ -24,6 +33,8 @@ class FFmpegSession:
         self.process: Optional[subprocess.Popen] = None
         # Playback HLS is served from /streams/sessions/<id>/stream.m3u8
         self.playback_url = f"/streams/sessions/{self.id}/stream.m3u8"
+        self.record_segment_minutes = max(0, int(record_segment_minutes or 0))
+        self.record_segment_seconds = self.record_segment_minutes * 60
         # Recording file using unique name: YYYYMMDD_HHMMSS_ID.ts
         self.record_filename = f"{self.start_timestamp}_{session_id[:6]}.ts"
         self.record_path = os.path.join(self.records_dir_for_person, self.record_filename)
@@ -46,7 +57,7 @@ class FFmpegSession:
         return self.record_path
 
     def _writer_loop(self):
-        """Read TS from ffmpeg stdout and append to single file (no rotation)."""
+        """Read TS from ffmpeg stdout and append to TS files (optional time-based rotation)."""
         if not self.process or not self.process.stdout:
             logger.warning("Writer loop: pas de processus ou stdout", session_id=self.id)
             return
@@ -60,6 +71,7 @@ class FFmpegSession:
                    start_date=self.start_date)
         
         f = open(self.record_path, "ab", buffering=0)
+        current_file_started_at = time.time()
         total_bytes = 0
         chunk_count = 0
         
@@ -76,6 +88,30 @@ class FFmpegSession:
                 f.write(chunk)
                 total_bytes += len(chunk)
                 chunk_count += 1
+
+                # Rotate output file on configured segment duration.
+                if self.record_segment_seconds > 0 and (time.time() - current_file_started_at) >= self.record_segment_seconds:
+                    old_record_path = self.record_path
+                    try:
+                        f.flush()
+                        f.close()
+                    except Exception:
+                        pass
+
+                    next_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    self.record_filename = f"{next_timestamp}_{self.id[:6]}.ts"
+                    self.record_path = os.path.join(self.records_dir_for_person, self.record_filename)
+                    f = open(self.record_path, "ab", buffering=0)
+                    current_file_started_at = time.time()
+
+                    logger.info(
+                        "Rotation fichier enregistrement",
+                        session_id=self.id,
+                        person=self.person,
+                        previous_file=os.path.basename(old_record_path),
+                        new_file=self.record_filename,
+                        segment_minutes=self.record_segment_minutes,
+                    )
                 
                 # Log tous les 100MB
                 if total_bytes % (100 * 1024 * 1024) < 64 * 1024:
@@ -104,11 +140,19 @@ class FFmpegSession:
 
 
 class FFmpegManager:
-    def __init__(self, base_output_dir: str, ffmpeg_path: str = "ffmpeg", hls_time: int = 4, hls_list_size: int = 6):
+    def __init__(
+        self,
+        base_output_dir: str,
+        ffmpeg_path: str = "ffmpeg",
+        hls_time: int = 4,
+        hls_list_size: int = 6,
+        record_segment_minutes: int = 0,
+    ):
         self.base_output_dir = base_output_dir
         self.ffmpeg_path = ffmpeg_path
         self.hls_time = hls_time
         self.hls_list_size = hls_list_size
+        self.record_segment_minutes = max(0, int(record_segment_minutes or 0))
         self._lock = threading.Lock()
         self._sessions: Dict[str, FFmpegSession] = {}
         # Create subdirectories for sessions (HLS) and records (TS by person/day)
@@ -122,8 +166,14 @@ class FFmpegManager:
                    ffmpeg_path=ffmpeg_path,
                    hls_time=hls_time,
                    hls_list_size=hls_list_size,
+                   record_segment_minutes=self.record_segment_minutes,
                    sessions_root=self.sessions_root,
                    records_root=self.records_root)
+
+    def set_record_segment_minutes(self, minutes: int):
+        """Update segment duration for newly started sessions."""
+        self.record_segment_minutes = max(0, int(minutes or 0))
+        logger.info("Segment d'enregistrement mis à jour", record_segment_minutes=self.record_segment_minutes)
 
     def start_session(self, input_url: str, person: str, display_name: Optional[str] = None) -> FFmpegSession:
         logger.ffmpeg_start("new", person, input_url)
@@ -146,7 +196,15 @@ class FFmpegManager:
             os.makedirs(records_dir_for_person, exist_ok=True)
             logger.debug("Création répertoire enregistrement", path=records_dir_for_person)
             
-            sess = FFmpegSession(session_id, input_url, sessions_dir, records_dir_for_person, person, display_name=display_name)
+            sess = FFmpegSession(
+                session_id,
+                input_url,
+                sessions_dir,
+                records_dir_for_person,
+                person,
+                display_name=display_name,
+                record_segment_minutes=self.record_segment_minutes,
+            )
 
             # Build tee spec: one branch to stdout (pipe:1) as MPEG-TS, one for HLS playback
             hls_seg = os.path.join(sessions_dir, 'seg_%06d.ts')
