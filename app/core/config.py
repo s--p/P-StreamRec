@@ -57,6 +57,7 @@ CONVERT_PRESET = os.getenv("CONVERT_PRESET", "medium")
 CONVERT_CRF = os.getenv("CONVERT_CRF", "23")
 CONVERT_AUDIO_BITRATE = os.getenv("CONVERT_AUDIO_BITRATE", "128k")
 CONVERT_COPY_AUDIO = os.getenv("CONVERT_COPY_AUDIO", "true").lower() in {"1", "true", "yes"}
+CONVERT_QSV_DEVICE = os.getenv("CONVERT_QSV_DEVICE", "/dev/dri/renderD128")
 
 # Timezone
 TZ = os.getenv("TZ", "UTC")
