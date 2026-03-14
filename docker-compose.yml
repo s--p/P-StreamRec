@@ -5,36 +5,65 @@ services:
     image: ghcr.io/flaresolverr/flaresolverr:latest
     container_name: flaresolverr
     environment:
-      - LOG_LEVEL=info
-      - TZ=${TZ:-America/Toronto}
+      LOG_LEVEL: "${FLARESOLVERR_LOG_LEVEL:-info}"
+      LOG_HTML: "false"
+      CAPTCHA_SOLVER: "none"
+      TZ: "${TZ:-Europe/Berlin}"
     ports:
       - "${FLARESOLVERR_PORT:-8191}:8191"
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8191/', timeout=5).read().decode())\" | grep -q 'FlareSolverr is ready'"]
+      interval: 20s
+      timeout: 10s
+      retries: 6
+      start_period: 40s
 
   p-streamrec:
     image: ghcr.io/s--p/p-streamrec:latest
     container_name: p-streamrec
     depends_on:
-      - flaresolverr
+      flaresolverr:
+        condition: service_healthy
     environment:
-      - OUTPUT_DIR=/data
-      - PORT=${PORT:-8080}
-      - FFMPEG_PATH=ffmpeg
-      - HLS_TIME=${HLS_TIME:-4}
-      - HLS_LIST_SIZE=${HLS_LIST_SIZE:-6}
-      - CB_RESOLVER_ENABLED=${CB_RESOLVER_ENABLED:-true}
-      - AUTO_RECORD_USERS=${AUTO_RECORD_USERS:-}
-      # - CB_COOKIE=session=...; autre=...   # Optionnel
-      - PASSWORD=${PASSWORD:-}
-      - TZ=${TZ:-America/Toronto}
-      # Chaturbate Authentication
-      - CHATURBATE_USERNAME=${CHATURBATE_USERNAME:-}
-      - CHATURBATE_PASSWORD=${CHATURBATE_PASSWORD:-}
-      # FlareSolverr
-      - FLARESOLVERR_URL=${FLARESOLVERR_URL:-http://flaresolverr:8191}
+      OUTPUT_DIR: "/data"
+      PORT: "${PORT:-8080}"
+      FFMPEG_PATH: "ffmpeg"
+      HLS_TIME: "${HLS_TIME:-4}"
+      HLS_LIST_SIZE: "${HLS_LIST_SIZE:-6}"
+      TZ: "${TZ:-Europe/Berlin}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+
+      # Chaturbate credentials: set in .env (do not hardcode secrets in compose)
+      CHATURBATE_USERNAME: "${CHATURBATE_USERNAME:-}"
+      CHATURBATE_PASSWORD: "${CHATURBATE_PASSWORD:-}"
+
+      CB_RESOLVER_ENABLED: "${CB_RESOLVER_ENABLED:-true}"
+      FLARESOLVERR_URL: "${FLARESOLVERR_URL:-http://flaresolverr:8191}"
+      FLARESOLVERR_MAX_TIMEOUT: "${FLARESOLVERR_MAX_TIMEOUT:-90000}"
+      FLARESOLVERR_STARTUP_RETRIES: "${FLARESOLVERR_STARTUP_RETRIES:-15}"
+      FLARESOLVERR_STARTUP_DELAY: "${FLARESOLVERR_STARTUP_DELAY:-2}"
+
+      CB_REQUEST_DELAY: "${CB_REQUEST_DELAY:-3}"
+      MONITOR_OFFLINE_FAILURE_THRESHOLD: "${MONITOR_OFFLINE_FAILURE_THRESHOLD:-5}"
+
+      # Conversion strategy: prefer QSV, fallback in app to software re-encode if unavailable
+      AUTO_CONVERT: "${AUTO_CONVERT:-true}"
+      KEEP_TS: "${KEEP_TS:-false}"
+      AUTO_CONVERT_WHILE_RECORDING: "${AUTO_CONVERT_WHILE_RECORDING:-false}"
+      CONVERT_MODE: "${CONVERT_MODE:-qsv}"
+      CONVERT_PRESET: "${CONVERT_PRESET:-fast}"
+      CONVERT_CRF: "${CONVERT_CRF:-23}"
+      CONVERT_COPY_AUDIO: "${CONVERT_COPY_AUDIO:-false}"
+      CONVERT_AUDIO_BITRATE: "${CONVERT_AUDIO_BITRATE:-128k}"
+
+      # Optional UI auth
+      PASSWORD: "${PASSWORD:-}"
     ports:
       - "${HOST_PORT:-8080}:${PORT:-8080}"
     volumes:
-      - ${HOST_DATA_DIR:-./data}:/data
+      - "${HOST_DATA_DIR:-/opt/p-streamrec/data}:/data"
       - /var/run/docker.sock:/var/run/docker.sock
+    devices:
+      - /dev/dri:/dev/dri
     restart: unless-stopped

@@ -3,11 +3,72 @@ Tâche de conversion automatique des enregistrements TS -> MP4
 """
 import asyncio
 import time
-import subprocess
 from pathlib import Path
 from typing import Optional
 from ..logger import logger
-from ..core.config import AUTO_CONVERT, KEEP_TS
+from ..core.config import (
+    AUTO_CONVERT,
+    KEEP_TS,
+    AUTO_CONVERT_WHILE_RECORDING,
+    CONVERT_MODE,
+    CONVERT_PRESET,
+    CONVERT_CRF,
+    CONVERT_AUDIO_BITRATE,
+    CONVERT_COPY_AUDIO,
+)
+
+
+def _build_convert_cmd(
+    ts_path: Path,
+    mp4_path: Path,
+    ffmpeg_path: str,
+    mode: str,
+) -> list[str]:
+    base = [ffmpeg_path, "-i", str(ts_path)]
+
+    if mode == "copy":
+        # Remux only: no video/audio re-encoding, minimal CPU usage.
+        return base + [
+            "-c", "copy",
+            "-movflags", "+faststart",
+            "-y",
+            str(mp4_path),
+        ]
+
+    if mode == "qsv":
+        cmd = base + [
+            "-c:v", "h264_qsv",
+            "-preset", CONVERT_PRESET,
+        ]
+        if CONVERT_COPY_AUDIO:
+            cmd += ["-c:a", "copy"]
+        else:
+            cmd += ["-c:a", "aac", "-b:a", CONVERT_AUDIO_BITRATE]
+        cmd += ["-movflags", "+faststart", "-y", str(mp4_path)]
+        return cmd
+
+    # Default software re-encode profile.
+    cmd = base + [
+        "-c:v", "libx264",
+        "-crf", str(CONVERT_CRF),
+        "-preset", CONVERT_PRESET,
+    ]
+    if CONVERT_COPY_AUDIO:
+        cmd += ["-c:a", "copy"]
+    else:
+        cmd += ["-c:a", "aac", "-b:a", CONVERT_AUDIO_BITRATE]
+    cmd += ["-movflags", "+faststart", "-y", str(mp4_path)]
+    return cmd
+
+
+async def _run_ffmpeg_command(cmd: list[str]) -> tuple[int, bytes, bytes]:
+    process = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await process.communicate()
+    return process.returncode, stdout, stderr
 
 
 async def convert_ts_to_mp4(
@@ -33,38 +94,25 @@ async def convert_ts_to_mp4(
                ts_file=ts_path.name, 
                mp4_file=mp4_path.name)
     
-    # Commande FFmpeg optimisée pour compression
-    # -c:v libx264 : codec H.264 (meilleure compression)
-    # -crf 23 : qualité (18-28, 23 = bon équilibre qualité/taille)
-    # -preset medium : vitesse de compression (fast, medium, slow)
-    # -c:a aac : codec audio AAC
-    # -b:a 128k : bitrate audio
-    cmd = [
-        ffmpeg_path,
-        "-i", str(ts_path),
-        "-c:v", "libx264",
-        "-crf", "23",
-        "-preset", "medium",
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-movflags", "+faststart",  # Optimisation streaming
-        "-y",  # Overwrite
-        str(mp4_path)
-    ]
+    mode = CONVERT_MODE if CONVERT_MODE in {"reencode", "copy", "qsv"} else "reencode"
+    cmd = _build_convert_cmd(ts_path, mp4_path, ffmpeg_path, mode)
     
     try:
         # Lancer la conversion
-        logger.debug("Commande FFmpeg", command=" ".join(cmd[:8]) + "...")
-        
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        stdout, stderr = await process.communicate()
-        
-        if process.returncode == 0:
+        logger.debug("Commande FFmpeg", command=" ".join(cmd[:10]) + "...", mode=mode)
+
+        returncode, stdout, stderr = await _run_ffmpeg_command(cmd)
+
+        # Fallback to software profile if QSV is not available in runtime/container.
+        if returncode != 0 and mode == "qsv":
+            logger.warning(
+                "Échec QSV, fallback libx264",
+                ts_file=ts_path.name,
+            )
+            fallback_cmd = _build_convert_cmd(ts_path, mp4_path, ffmpeg_path, "reencode")
+            returncode, stdout, stderr = await _run_ffmpeg_command(fallback_cmd)
+
+        if returncode == 0:
             # Conversion réussie
             mp4_size = mp4_path.stat().st_size
             ts_size = ts_path.stat().st_size
@@ -75,7 +123,8 @@ async def convert_ts_to_mp4(
                          mp4_file=mp4_path.name,
                          ts_size_mb=f"{ts_size / 1024 / 1024:.1f}",
                          mp4_size_mb=f"{mp4_size / 1024 / 1024:.1f}",
-                         reduction_percent=f"{reduction:.1f}%")
+                         reduction_percent=f"{reduction:.1f}%",
+                         mode=mode)
             
             return True, mp4_path, mp4_size
         else:
@@ -83,6 +132,7 @@ async def convert_ts_to_mp4(
             error_msg = stderr.decode('utf-8') if stderr else "Unknown error"
             logger.error("Erreur conversion FFmpeg",
                         ts_file=ts_path.name,
+                        mode=mode,
                         error=error_msg[:500])
             return False, None, None
             
@@ -164,15 +214,24 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
             # Récupérer les sessions actives pour savoir quels fichiers sont en cours d'enregistrement
             active_sessions = ffmpeg_manager.list_status()
             active_recordings = {}  # {username: recording_filename}
+            active_count = 0
             for session in active_sessions:
                 if session.get('running'):
+                    active_count += 1
                     username = session.get('person')
                     record_path = session.get('record_path', '')
                     if username and record_path:
                         filename = Path(record_path).name
                         active_recordings[username] = filename
 
-            logger.debug("Sessions actives", active_count=len(active_recordings), active_users=list(active_recordings.keys()))
+            logger.debug("Sessions actives", active_count=active_count, active_users=list(active_recordings.keys()))
+
+            if active_count > 0 and not AUTO_CONVERT_WHILE_RECORDING:
+                logger.debug(
+                    "Conversion reportée (enregistrements actifs)",
+                    active_count=active_count,
+                )
+                continue
 
             for user_dir in records_root.iterdir():
                 if not user_dir.is_dir():
