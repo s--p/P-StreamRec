@@ -18,6 +18,9 @@ from ..core.config import (
     CONVERT_AUDIO_BITRATE,
     CONVERT_COPY_AUDIO,
     CONVERT_QSV_DEVICE,
+    CONVERT_MIN_TS_BYTES,
+    CONVERT_STALE_TS_SECONDS,
+    CONVERT_FAILED_RETRY_SECONDS,
 )
 
 
@@ -251,6 +254,10 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
     except Exception as e:
         logger.error("Erreur scan initial", error=str(e), exc_info=True)
 
+    # Backoff per TS file to avoid retry loops on permanently broken inputs.
+    retry_after: dict[str, float] = {}
+    failure_count: dict[str, int] = {}
+
     while True:
         try:
             await asyncio.sleep(30)  # Vérifier toutes les 30 secondes
@@ -316,6 +323,20 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                             break
 
                     ts_path = Path(ts_file)
+                    ts_key = str(ts_path)
+                    now = time.time()
+
+                    # Respect retry backoff for recently failed conversions.
+                    next_retry = retry_after.get(ts_key)
+                    if next_retry and now < next_retry:
+                        continue
+
+                    try:
+                        ts_stat = ts_path.stat()
+                    except FileNotFoundError:
+                        retry_after.pop(ts_key, None)
+                        failure_count.pop(ts_key, None)
+                        continue
 
                     # Vérifier si ce fichier est en cours d'enregistrement
                     if username in active_recordings and active_recordings[username] == ts_file.name:
@@ -357,6 +378,8 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                         if not keep_ts and ts_path.exists():
                             try:
                                 ts_path.unlink()
+                                retry_after.pop(ts_key, None)
+                                failure_count.pop(ts_key, None)
                                 logger.success("Fichier TS supprimé (MP4 existe déjà)",
                                              username=username,
                                              ts_file=ts_file.name,
@@ -368,12 +391,32 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                         continue
 
                     # Vérifier si le fichier TS est stable (pas modifié depuis 60s)
-                    last_modified = ts_path.stat().st_mtime
-                    if time.time() - last_modified < 60:
+                    last_modified = ts_stat.st_mtime
+                    age_seconds = now - last_modified
+                    if age_seconds < 60:
                         # Fichier encore en cours d'écriture
                         logger.debug("Fichier modifié récemment, attente stabilité",
                                    file=ts_path.name,
-                                   last_modified_ago=f"{time.time() - last_modified:.0f}s")
+                                   last_modified_ago=f"{age_seconds:.0f}s")
+                        continue
+
+                    # Skip tiny stale TS files; they are usually aborted sessions and can starve the queue.
+                    if ts_stat.st_size < CONVERT_MIN_TS_BYTES and age_seconds >= CONVERT_STALE_TS_SECONDS:
+                        failure_count[ts_key] = failure_count.get(ts_key, 0) + 1
+                        cooldown = min(
+                            1800,
+                            CONVERT_FAILED_RETRY_SECONDS * failure_count[ts_key],
+                        )
+                        retry_after[ts_key] = now + cooldown
+                        logger.warning(
+                            "TS trop petit pour conversion, retry différé",
+                            username=username,
+                            filename=ts_file.name,
+                            ts_size=ts_stat.st_size,
+                            min_ts_size=CONVERT_MIN_TS_BYTES,
+                            retry_in_seconds=cooldown,
+                            failures=failure_count[ts_key],
+                        )
                         continue
 
                     # If auto_convert is disabled, just index the TS file in DB
@@ -450,6 +493,8 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                             try:
                                 if ts_path.exists():
                                     ts_path.unlink()
+                                    retry_after.pop(ts_key, None)
+                                    failure_count.pop(ts_key, None)
                                     logger.success("Fichier TS supprimé après conversion",
                                                  username=username,
                                                  ts_file=ts_file.name,
@@ -467,16 +512,26 @@ async def auto_convert_recordings_task(db, output_dir: Path, ffmpeg_manager, ffm
                                      username=username,
                                      filename=ts_file.name,
                                      mp4_file=mp4_path_result.name)
+                        retry_after.pop(ts_key, None)
+                        failure_count.pop(ts_key, None)
+
+                        # Process one successful conversion at a time.
+                        converted_this_cycle = True
+
+                        # Attendre un peu entre chaque conversion pour éviter surcharge
+                        await asyncio.sleep(5)
                     else:
+                        failure_count[ts_key] = failure_count.get(ts_key, 0) + 1
+                        cooldown = min(
+                            1800,
+                            CONVERT_FAILED_RETRY_SECONDS * failure_count[ts_key],
+                        )
+                        retry_after[ts_key] = time.time() + cooldown
                         logger.error("Échec conversion",
                                    username=username,
-                                   filename=ts_file.name)
-
-                    # Process one file at a time; remaining queue is handled in next cycles.
-                    converted_this_cycle = True
-
-                    # Attendre un peu entre chaque conversion pour éviter surcharge
-                    await asyncio.sleep(5)
+                                   filename=ts_file.name,
+                                   retry_in_seconds=cooldown,
+                                   failures=failure_count[ts_key])
 
         except Exception as e:
             logger.error("Erreur dans tâche de conversion",

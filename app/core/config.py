@@ -60,6 +60,9 @@ CONVERT_CRF = os.getenv("CONVERT_CRF", "23")
 CONVERT_AUDIO_BITRATE = os.getenv("CONVERT_AUDIO_BITRATE", "128k")
 CONVERT_COPY_AUDIO = os.getenv("CONVERT_COPY_AUDIO", "true").lower() in {"1", "true", "yes"}
 CONVERT_QSV_DEVICE = os.getenv("CONVERT_QSV_DEVICE", "/dev/dri/renderD128")
+CONVERT_MIN_TS_BYTES = max(0, int(os.getenv("CONVERT_MIN_TS_BYTES", "1024")))
+CONVERT_STALE_TS_SECONDS = max(30, int(os.getenv("CONVERT_STALE_TS_SECONDS", "120")))
+CONVERT_FAILED_RETRY_SECONDS = max(30, int(os.getenv("CONVERT_FAILED_RETRY_SECONDS", "180")))
 
 # Timezone
 TZ = os.getenv("TZ", "UTC")
