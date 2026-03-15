@@ -630,7 +630,7 @@ async def monitor_models_task(
                                     # allow a longer grace period before forcing a restart.
                                     hard_restart_after = MONITOR_RECORDING_STALL_SECONDS * 3
                                     startup_no_data = (
-                                        and current_size <= 0
+                                        current_size <= 0
                                         and session_age >= MONITOR_STARTUP_ZERO_BYTES_SECONDS
                                     )
                                     should_restart = (
