@@ -583,7 +583,6 @@ async def monitor_models_task(
                             auto_record_enabled
                             and not is_recording
                             and effective_online
-                            and effective_recordable
                             and chaturbate_api
                         ):
                             now = time.time()
@@ -644,9 +643,11 @@ async def monitor_models_task(
                                         )
                                 else:
                                     logger.debug(
-                                        "Recovery: no HLS available",
+                                        "Recovery: no HLS available yet",
                                         task="monitor",
                                         username=username,
+                                        room_status=status.get("room_status"),
+                                        is_recordable=effective_recordable,
                                     )
                         else:
                             # Reset attempt timer when model is offline or already recording.

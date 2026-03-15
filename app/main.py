@@ -2133,7 +2133,6 @@ async def auto_record_task():
                             task="auto-record",
                             username=username,
                         )
-                        continue
 
                     # Modèle en ligne selon le cache, résoudre le flux HLS
                     try:
@@ -2142,15 +2141,15 @@ async def auto_record_task():
                         if chaturbate_api:
                             try:
                                 live_status = await chaturbate_api.get_model_status(username)
-                                if not live_status.get('is_recordable') or not live_status.get('hls_source'):
+                                if live_status.get('is_recordable') and live_status.get('hls_source'):
+                                    hls_source = live_status.get('hls_source')
+                                else:
                                     logger.debug(
-                                        "Skipping start: stream not recordable",
+                                        "Live pre-check: stream not recordable yet",
                                         task="auto-record",
                                         username=username,
                                         room_status=live_status.get('room_status'),
                                     )
-                                    continue
-                                hls_source = live_status.get('hls_source')
                             except Exception as e:
                                 logger.debug(
                                     "Live status pre-check failed",

@@ -7,10 +7,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="stylesheet" href="/static/styles.css?v=20260315-1">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="/static/loader.js"></script>
-  <script defer src="/static/recordings.js"></script>
+  <script defer src="/static/recordings.js?v=20260315-1"></script>
 </head>
 <body>
   <div id="header-placeholder"></div>
@@ -54,27 +54,27 @@
       <div class="recordings-list" id="recordingsList"></div>
     </div>
 
-    <!-- Player Modal -->
-    <div class="player-modal" id="playerModal" style="display: none;">
-      <div class="player-modal-content">
-        <div class="player-modal-header">
-          <div class="player-modal-left-actions">
-            <button class="back-btn player-back-btn" id="playerBackBtn" onclick="backToModelRecordings()">&#8592; Back to Recordings</button>
-          </div>
-          <h3 id="playerTitle">Playing</h3>
-          <div class="player-modal-right-actions">
-            <button class="rec-action-btn danger player-delete-btn" id="playerDeleteBtn" onclick="deleteCurrentPlayingRecording()" title="Delete current recording">&#128465; Delete</button>
-            <button class="player-close-btn" onclick="closePlayer()">&times;</button>
-          </div>
-        </div>
-        <video id="recordingPlayer" class="recording-video" controls></video>
-      </div>
-    </div>
-
     <!-- Empty state -->
     <div class="empty-message" id="emptyRecordings" style="display: none;">
       <div class="icon">&#127910;</div>
       <p>No recordings found</p>
+    </div>
+  </div>
+
+  <!-- Player Modal (outside .container to avoid header stacking overlap) -->
+  <div class="player-modal" id="playerModal" style="display: none;">
+    <div class="player-modal-content">
+      <div class="player-modal-header">
+        <div class="player-modal-left-actions">
+          <button class="back-btn player-back-btn" id="playerBackBtn" onclick="backToModelRecordings()">&#8592; Back to Recordings</button>
+        </div>
+        <h3 id="playerTitle">Playing</h3>
+        <div class="player-modal-right-actions">
+          <button class="rec-action-btn danger player-delete-btn" id="playerDeleteBtn" onclick="deleteCurrentPlayingRecording()" title="Delete current recording">&#128465; Delete</button>
+          <button class="player-close-btn" onclick="closePlayer()">&times;</button>
+        </div>
+      </div>
+      <video id="recordingPlayer" class="recording-video" controls></video>
     </div>
   </div>
 
