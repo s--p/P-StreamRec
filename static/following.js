@@ -101,10 +101,14 @@ function renderFollowingCard(model, isOnline) {
   var thumbUrl = model.thumbnail_url || model.thumbnail || ('https://roomimg.stream.highwebmedia.com/ri/' + username + '.jpg');
   var isTracked = trackedModels.has(username);
   var isRecording = model.isRecording || model.is_recording || false;
+  var showStatus = String(model.showStatus || model.show_status || '').toLowerCase();
+  var isPrivateShow = ['private', 'ticket', 'password', 'spy'].indexOf(showStatus) >= 0;
 
   var statusBadge = '';
   if (isRecording) {
     statusBadge = '<span class="recording-badge-sm">REC</span>';
+  } else if (isOnline && isPrivateShow) {
+    statusBadge = '<span class="private-badge-sm">' + escapeHtml(showStatus.toUpperCase()) + '</span>';
   } else if (isOnline) {
     statusBadge = '<span class="online-badge-sm">LIVE</span>';
   } else {
@@ -117,11 +121,19 @@ function renderFollowingCard(model, isOnline) {
   var subtitleHtml = '';
   if (isOnline && model.viewers > 0) {
     subtitleHtml = '<span style="font-size: 0.8rem; color: var(--text-secondary);">&#128065; ' + Number(model.viewers).toLocaleString() + ' viewers</span>';
+    if (isPrivateShow) {
+      subtitleHtml += ' <span style="font-size: 0.8rem; color: var(--warning); margin-left: 0.5rem;">Show: ' + escapeHtml(showStatus) + '</span>';
+    }
   } else if (!isOnline && model.last_seen_online_at) {
     subtitleHtml = '<span style="font-size: 0.8rem; color: var(--text-muted);">' + formatLastSeen(model.last_seen_online_at) + '</span>';
   }
 
-  return '<div class="following-card ' + (isOnline ? 'is-online' : 'is-offline') + '">' +
+  var cardClass = isOnline ? 'is-online' : 'is-offline';
+  if (isOnline && isPrivateShow) {
+    cardClass += ' is-private';
+  }
+
+  return '<div class="following-card ' + cardClass + '">' +
     '<div class="following-card-thumb" onclick="window.location.href=\'/watch/' + escapeHtml(username) + '\'">' +
       '<img src="' + escapeHtml(thumbUrl) + '" alt="' + escapeHtml(username) + '" style="' + imgFilter + '" ' +
         'onerror="this.src=\'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22280%22 height=%22180%22%3E%3Crect fill=%22%231a1f3a%22 width=%22280%22 height=%22180%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%23a0aec0%22 font-family=%22system-ui%22 font-size=%2216%22%3E' + escapeHtml(username) + '%3C/text%3E%3C/svg%3E\'" loading="lazy" />' +

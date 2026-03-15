@@ -80,6 +80,7 @@ class Database:
                     username TEXT PRIMARY KEY,
                     display_name TEXT,
                     is_online BOOLEAN DEFAULT 0,
+                    show_status TEXT DEFAULT '',
                     viewers INTEGER DEFAULT 0,
                     thumbnail_url TEXT,
                     last_seen_online_at INTEGER,
@@ -120,6 +121,7 @@ class Database:
 
             # Additive migration for existing databases.
             await self._ensure_column(db, "models", "is_recordable", "BOOLEAN DEFAULT 0")
+            await self._ensure_column(db, "followed_models", "show_status", "TEXT DEFAULT ''")
 
             await db.commit()
             
@@ -423,6 +425,7 @@ class Database:
         username: str,
         display_name: Optional[str] = None,
         is_online: bool = False,
+        show_status: Optional[str] = None,
         viewers: int = 0,
         thumbnail_url: Optional[str] = None
     ):
@@ -433,21 +436,22 @@ class Database:
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 INSERT INTO followed_models (
-                    username, display_name, is_online, viewers,
+                    username, display_name, is_online, show_status, viewers,
                     thumbnail_url, last_seen_online_at, synced_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(username) DO UPDATE SET
                     display_name = COALESCE(?, display_name),
                     is_online = ?,
+                    show_status = COALESCE(?, show_status),
                     viewers = ?,
                     thumbnail_url = COALESCE(?, thumbnail_url),
                     last_seen_online_at = CASE WHEN ? THEN ? ELSE last_seen_online_at END,
                     synced_at = ?
             """, (
-                username, display_name, is_online, viewers,
+                username, display_name, is_online, show_status, viewers,
                 thumbnail_url, now if is_online else None, now,
-                display_name, is_online, viewers, thumbnail_url,
+                display_name, is_online, show_status, viewers, thumbnail_url,
                 is_online, now, now
             ))
             await db.commit()

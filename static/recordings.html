@@ -7,10 +7,10 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css?v=20260315-1">
+  <link rel="stylesheet" href="/static/styles.css?v=20260315-2">
   <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
   <script src="/static/loader.js"></script>
-  <script defer src="/static/recordings.js?v=20260315-1"></script>
+  <script defer src="/static/recordings.js?v=20260315-2"></script>
 </head>
 <body>
   <div id="header-placeholder"></div>
@@ -67,6 +67,10 @@
       <div class="player-modal-header">
         <div class="player-modal-left-actions">
           <button class="back-btn player-back-btn" id="playerBackBtn" onclick="backToModelRecordings()">&#8592; Back to Recordings</button>
+        </div>
+        <div class="player-modal-nav-actions">
+          <button class="rec-action-btn player-nav-btn" id="playerPrevBtn" onclick="playPreviousRecording()" title="Previous recording">&#9664; Prev</button>
+          <button class="rec-action-btn player-nav-btn" id="playerNextBtn" onclick="playNextRecording()" title="Next recording">Next &#9654;</button>
         </div>
         <h3 id="playerTitle">Playing</h3>
         <div class="player-modal-right-actions">

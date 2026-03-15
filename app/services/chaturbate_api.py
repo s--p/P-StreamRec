@@ -446,6 +446,7 @@ class ChaturbateAPI:
     def _parse_room_item(item: Dict[str, Any], is_online: bool = True) -> Dict[str, Any]:
         """Parse a room item from the roomlist API into our model format."""
         username = item.get("username", "")
+        show_status = (item.get("current_show") or item.get("room_status") or "").strip().lower()
         thumb = item.get("img", "")
         if thumb and thumb.startswith("//"):
             thumb = "https:" + thumb
@@ -456,6 +457,7 @@ class ChaturbateAPI:
             "username": username,
             "display_name": item.get("display_name") or username,
             "is_online": is_online or item.get("current_show") == "public",
+            "show_status": show_status,
             "viewers": item.get("num_users", 0),
             "thumbnail_url": thumb,
             "tags": item.get("tags", []),

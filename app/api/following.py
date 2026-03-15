@@ -92,6 +92,7 @@ async def sync_following():
             username=model["username"],
             display_name=model.get("display_name"),
             is_online=is_online,
+            show_status=model.get("show_status"),
             viewers=model.get("viewers", 0),
             thumbnail_url=thumb,
         )

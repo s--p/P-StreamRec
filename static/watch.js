@@ -15,6 +15,36 @@ const MAX_HLS_RECOVERY_ATTEMPTS = 6;
 let hlsRecoveryAttempts = 0;
 let restartTimer = null;
 let currentStreamUrl = '';
+const GLOBAL_VOLUME_KEY = 'pstreamrec_global_volume';
+
+function getSavedGlobalVolume() {
+  try {
+    var raw = localStorage.getItem(GLOBAL_VOLUME_KEY);
+    if (raw === null || raw === undefined || raw === '') return 0.7;
+    var parsed = parseFloat(raw);
+    if (!isFinite(parsed)) return 0.7;
+    return Math.max(0, Math.min(1, parsed));
+  } catch (e) {
+    return 0.7;
+  }
+}
+
+function saveGlobalVolume(volume) {
+  try {
+    var clamped = Math.max(0, Math.min(1, Number(volume) || 0));
+    localStorage.setItem(GLOBAL_VOLUME_KEY, String(clamped));
+  } catch (e) {}
+}
+
+function applyGlobalVolume(video) {
+  var slider = document.getElementById('volumeSlider');
+  var muteBtn = document.getElementById('muteBtn');
+  var vol = getSavedGlobalVolume();
+  video.volume = vol;
+  video.muted = vol === 0;
+  if (slider) slider.value = String(vol);
+  if (muteBtn) muteBtn.innerHTML = vol === 0 ? '&#128263;' : '&#128266;';
+}
 
 // ============================================
 // Extract username from URL
@@ -475,9 +505,11 @@ function toggleMute() {
   if (video.muted) {
     btn.innerHTML = '&#128263;';
     slider.value = 0;
+    saveGlobalVolume(0);
   } else {
     btn.innerHTML = '&#128266;';
     slider.value = video.volume;
+    saveGlobalVolume(video.volume);
   }
 }
 
@@ -491,6 +523,7 @@ function changeVolume(val) {
   } else {
     btn.innerHTML = '&#128266;';
   }
+  saveGlobalVolume(video.muted ? 0 : video.volume);
 }
 
 function toggleFullscreen() {
@@ -506,8 +539,17 @@ function toggleFullscreen() {
 function setupLiveControlsListeners() {
   var video = document.getElementById('videoPlayer');
   var btn = document.getElementById('playPauseBtn');
+  applyGlobalVolume(video);
   video.addEventListener('play', function() { btn.innerHTML = '&#9646;&#9646;'; });
   video.addEventListener('pause', function() { btn.innerHTML = '&#9654;'; });
+  video.addEventListener('volumechange', function() {
+    var slider = document.getElementById('volumeSlider');
+    var muteBtn = document.getElementById('muteBtn');
+    var effectiveVolume = video.muted ? 0 : video.volume;
+    if (slider) slider.value = String(effectiveVolume);
+    if (muteBtn) muteBtn.innerHTML = effectiveVolume === 0 ? '&#128263;' : '&#128266;';
+    saveGlobalVolume(effectiveVolume);
+  });
 
   // Click on video to toggle play/pause
   video.addEventListener('click', function() { togglePlayPause(); });
