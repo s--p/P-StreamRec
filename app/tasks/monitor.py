@@ -35,6 +35,11 @@ try:
 except ValueError:
     MONITOR_RECORDING_STALL_SECONDS = 45
 
+try:
+    MONITOR_OFFLINE_HLS_PROBE_SECONDS = max(10, int(os.getenv("MONITOR_OFFLINE_HLS_PROBE_SECONDS", "20")))
+except ValueError:
+    MONITOR_OFFLINE_HLS_PROBE_SECONDS = 20
+
 async def check_model_status(
     session: aiohttp.ClientSession,
     username: str,
@@ -432,6 +437,8 @@ async def monitor_models_task(
         restart_attempts = {}
         # Track recording file growth to detect stalled ffmpeg sessions.
         recording_progress = {}
+        # Throttle expensive HLS probes when API status reports offline.
+        offline_hls_probe_at = {}
 
         try:
             restart_cooldown_seconds = max(
@@ -503,6 +510,59 @@ async def monitor_models_task(
                         )
                         is_recording = active_session is not None
                         auto_record_enabled = bool(model.get('auto_record', True))
+
+                        # chatvideocontext can occasionally return false negatives (online stream but is_online=False).
+                        # Probe HLS directly in a throttled manner so auto-record can still start promptly.
+                        if (
+                            auto_record_enabled
+                            and not is_recording
+                            and not effective_online
+                            and chaturbate_api
+                        ):
+                            now = time.time()
+                            last_probe = offline_hls_probe_at.get(username, 0)
+                            if now - last_probe >= MONITOR_OFFLINE_HLS_PROBE_SECONDS:
+                                offline_hls_probe_at[username] = now
+                                probe_hls = None
+
+                                try:
+                                    from ..resolvers.chaturbate import resolve_m3u8_async
+                                    probe_hls = await resolve_m3u8_async(username)
+                                except Exception as e:
+                                    logger.debug(
+                                        "Offline probe async resolver failed",
+                                        task="monitor",
+                                        username=username,
+                                        error=str(e),
+                                    )
+
+                                if not probe_hls:
+                                    try:
+                                        probe_hls = await chaturbate_api.get_edge_hls_url(username)
+                                    except Exception as e:
+                                        logger.debug(
+                                            "Offline probe edge HLS failed",
+                                            task="monitor",
+                                            username=username,
+                                            error=str(e),
+                                        )
+
+                                if probe_hls:
+                                    status["hls_source"] = probe_hls
+                                    status["request_ok"] = True
+                                    effective_online = True
+                                    effective_recordable = True
+                                    logger.info(
+                                        "Offline status corrected by HLS probe",
+                                        task="monitor",
+                                        username=username,
+                                    )
+                                else:
+                                    logger.debug(
+                                        "Offline HLS probe found no stream",
+                                        task="monitor",
+                                        username=username,
+                                    )
 
                         # If a recording session stops producing bytes for too long,
                         # restart it to reduce silent data loss periods.
