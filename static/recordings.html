@@ -58,8 +58,14 @@
     <div class="player-modal" id="playerModal" style="display: none;">
       <div class="player-modal-content">
         <div class="player-modal-header">
+          <div class="player-modal-left-actions">
+            <button class="back-btn" id="playerBackBtn" onclick="backToModelRecordings()">&#8592; Back to Recordings</button>
+          </div>
           <h3 id="playerTitle">Playing</h3>
-          <button class="player-close-btn" onclick="closePlayer()">&times;</button>
+          <div class="player-modal-right-actions">
+            <button class="rec-action-btn danger" id="playerDeleteBtn" onclick="deleteCurrentPlayingRecording()" title="Delete current recording">&#128465; Delete</button>
+            <button class="player-close-btn" onclick="closePlayer()">&times;</button>
+          </div>
         </div>
         <video id="recordingPlayer" class="recording-video" controls></video>
       </div>
