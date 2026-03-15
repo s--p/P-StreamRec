@@ -346,6 +346,7 @@ class FFmpegManager:
                     "name": sess.name,
                     "input_url": sess.input_url,
                     "created_at": sess.created_at,
+                    "started_at_unix": sess.start_time,
                     "running": running,
                     "playback_url": sess.playback_url,
                     "record_path": sess.record_path,
