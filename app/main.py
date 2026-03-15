@@ -697,8 +697,8 @@ async def api_start(body: StartBody):
         if model:
             auto_record = bool(model.get('auto_record', True))
             if not auto_record:
-                logger.warning("Auto-record désactivé pour ce modèle", username=username)
-                raise HTTPException(status_code=403, detail=f"Auto-record désactivé pour {username}")
+                logger.warning("Auto-record is disabled for this model", username=username)
+                raise HTTPException(status_code=403, detail=f"Auto-record is disabled for {username}")
         else:
             logger.warning("Modèle non trouvé en DB, auto-start refusé", username=username)
             raise HTTPException(status_code=404, detail=f"Modèle {username} non trouvé")
@@ -1876,7 +1876,7 @@ async def toggle_auto_record(username: str, body: dict):
                     if sess:
                         started_session = sess.id
                         logger.success(
-                            "Auto-record activé: démarrage immédiat",
+                            "Auto-record enabled: immediate start",
                             username=username,
                             session_id=sess.id,
                         )
@@ -1884,7 +1884,7 @@ async def toggle_auto_record(username: str, body: dict):
                     pass
                 except Exception as e:
                     logger.warning(
-                        "Auto-record activé mais démarrage immédiat échoué",
+                        "Auto-record enabled but immediate start failed",
                         username=username,
                         error=str(e),
                     )
@@ -2152,7 +2152,7 @@ async def auto_record_task():
 
                         if hls_source:
                             # Lancer l'enregistrement
-                            logger.background_task("auto-record", "Modèle en ligne détecté", username=username)
+                            logger.background_task("auto-record", "Model online detected", username=username)
 
                             try:
                                 sess = manager.start_session(
@@ -2162,26 +2162,26 @@ async def auto_record_task():
                                 )
 
                                 if sess:
-                                    logger.success("Auto-enregistrement démarré",
+                                    logger.success("Auto-record started",
                                                  task="auto-record",
                                                  username=username,
                                                  session_id=sess.id)
                             except RuntimeError as e:
-                                logger.warning("Impossible démarrer enregistrement",
+                                logger.warning("Unable to start recording",
                                              task="auto-record",
                                              username=username,
                                              error=str(e))
                                 continue
 
                     except Exception as e:
-                        logger.error("Erreur vérification modèle",
+                        logger.error("Model check failed",
                                    task="auto-record",
                                    username=username,
                                    error=str(e))
                         continue
                 
         except Exception as e:
-            logger.error("Erreur auto-record task", task="auto-record", exc_info=True, error=str(e))
+            logger.error("Auto-record task failed", task="auto-record", exc_info=True, error=str(e))
             await asyncio.sleep(60)
 
 

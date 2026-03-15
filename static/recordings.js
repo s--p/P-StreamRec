@@ -10,6 +10,8 @@ let showTsFiles = false;
 let currentPlayingRecordingId = '';
 let currentPlayingUsername = '';
 let currentPlayingFilename = '';
+let currentPlayingIndex = -1;
+let currentDetailRecordings = [];
 
 // ============================================
 // Load recordings grouped by model
@@ -160,6 +162,7 @@ async function showModelRecordings(username) {
     recordings.sort(function(a, b) {
       return (b.createdAt || b.date || 0) - (a.createdAt || a.date || 0);
     });
+    currentDetailRecordings = recordings;
 
     // Load playback positions
     var positions = {};
@@ -178,7 +181,7 @@ async function showModelRecordings(username) {
       }
     }
 
-    list.innerHTML = recordings.map(function(rec) {
+    list.innerHTML = recordings.map(function(rec, index) {
       var thumbUrl = rec.thumbnail || '/api/thumbnail/' + username;
       var recId = rec.recordingId || '';
       var pos = positions[recId];
@@ -189,7 +192,7 @@ async function showModelRecordings(username) {
         resumeBadge += '<div class="progress-bar"><div class="progress-fill" style="width:' + pct + '%"></div></div>';
       }
 
-      return '<div class="recording-item" onclick="playRecording(\'' + escapeHtml(username) + '\', \'' + escapeHtml(rec.filename) + '\', \'' + escapeHtml(recId) + '\')">' +
+      return '<div class="recording-item" onclick="playRecording(\'' + escapeHtml(username) + '\', \'' + escapeHtml(rec.filename) + '\', \'' + escapeHtml(recId) + '\', ' + index + ')">' +
         '<div class="recording-item-thumb">' +
           '<img src="' + escapeHtml(thumbUrl) + '" alt="" loading="lazy" ' +
             'onerror="this.style.display=\'none\'" />' +
@@ -212,6 +215,7 @@ async function showModelRecordings(username) {
   } catch (e) {
     console.error('Error loading recordings:', e);
     list.innerHTML = '<div class="empty-message"><div class="icon">&#9888;</div><p>Error loading recordings.</p></div>';
+    currentDetailRecordings = [];
   }
 }
 
@@ -222,12 +226,13 @@ function showModelGrid() {
   document.getElementById('modelGrid').style.display = 'grid';
   document.getElementById('recordingsDetail').style.display = 'none';
   currentDetailUser = '';
+  currentDetailRecordings = [];
 }
 
 // ============================================
 // Play recording with resume support
 // ============================================
-async function playRecording(username, filename, recordingId) {
+async function playRecording(username, filename, recordingId, index) {
   var modal = document.getElementById('playerModal');
   var video = document.getElementById('recordingPlayer');
   var title = document.getElementById('playerTitle');
@@ -236,9 +241,25 @@ async function playRecording(username, filename, recordingId) {
   currentPlayingRecordingId = recordingId;
   currentPlayingUsername = username;
   currentPlayingFilename = filename;
+  if (typeof index === 'number') {
+    currentPlayingIndex = index;
+  } else {
+    currentPlayingIndex = currentDetailRecordings.findIndex(function(rec) {
+      return rec.filename === filename;
+    });
+  }
 
   title.textContent = username + ' - ' + filename;
   modal.style.display = 'flex';
+
+  var playerBackBtn = document.getElementById('playerBackBtn');
+  if (playerBackBtn) {
+    playerBackBtn.textContent = '\u2190 Back to ' + username + ' Recordings';
+  }
+
+  // Focus the player immediately so keyboard arrows can scrub without clicking first.
+  video.setAttribute('tabindex', '0');
+  setTimeout(function() { video.focus(); }, 0);
 
   var url = '/streams/records/' + encodeURIComponent(username) + '/' + encodeURIComponent(filename);
 
@@ -302,6 +323,22 @@ async function loadAndSeek(video, recordingId, username) {
   video.play().catch(function(){});
 }
 
+function handlePlayerKeydown(event) {
+  var modal = document.getElementById('playerModal');
+  if (!modal || modal.style.display === 'none') return;
+
+  var video = document.getElementById('recordingPlayer');
+  if (!video || !isFinite(video.duration) || video.duration <= 0) return;
+
+  if (event.key === 'ArrowRight') {
+    event.preventDefault();
+    video.currentTime = Math.min(video.duration, video.currentTime + 5);
+  } else if (event.key === 'ArrowLeft') {
+    event.preventDefault();
+    video.currentTime = Math.max(0, video.currentTime - 5);
+  }
+}
+
 function savePosition(recordingId, username, position, duration) {
   fetch('/api/playback-position/' + encodeURIComponent(recordingId), {
     method: 'POST',
@@ -310,13 +347,14 @@ function savePosition(recordingId, username, position, duration) {
   }).catch(function(){});
 }
 
-async function closePlayer() {
+async function closePlayer(options) {
+  options = options || {};
   var modal = document.getElementById('playerModal');
   var video = document.getElementById('recordingPlayer');
 
   // Save final position and check auto-delete
   var shouldAutoDelete = false;
-  if (currentPlayingRecordingId && video.currentTime > 0 && video.duration > 0) {
+  if (!options.skipSave && currentPlayingRecordingId && video.currentTime > 0 && video.duration > 0) {
     try {
       var res = await fetch('/api/playback-position/' + encodeURIComponent(currentPlayingRecordingId), {
         method: 'POST',
@@ -352,7 +390,7 @@ async function closePlayer() {
   modal.style.display = 'none';
 
   // Auto-delete if threshold was reached
-  if (shouldAutoDelete && currentPlayingUsername && currentPlayingFilename) {
+  if (!options.skipAutoDelete && shouldAutoDelete && currentPlayingUsername && currentPlayingFilename) {
     showNotification('Auto-deleting watched recording...', 'success');
     try {
       var delRes = await fetch('/api/recordings/' + encodeURIComponent(currentPlayingUsername) + '/' + encodeURIComponent(currentPlayingFilename), {
@@ -369,9 +407,72 @@ async function closePlayer() {
   }
 
   // Reset tracking
-  currentPlayingRecordingId = '';
-  currentPlayingUsername = '';
-  currentPlayingFilename = '';
+  if (options.resetTracking !== false) {
+    currentPlayingRecordingId = '';
+    currentPlayingUsername = '';
+    currentPlayingFilename = '';
+    currentPlayingIndex = -1;
+  }
+}
+
+async function backToModelRecordings() {
+  var username = currentPlayingUsername || currentDetailUser;
+  await closePlayer({ skipAutoDelete: true });
+  if (username) {
+    await showModelRecordings(username);
+  }
+}
+
+async function deleteCurrentPlayingRecording() {
+  if (!currentPlayingUsername || !currentPlayingFilename) return;
+
+  if (!confirm('Delete recording "' + currentPlayingFilename + '"? This cannot be undone.')) {
+    return;
+  }
+
+  var username = currentPlayingUsername;
+  var filename = currentPlayingFilename;
+  var currentIndex = currentPlayingIndex;
+
+  await closePlayer({ skipSave: true, skipAutoDelete: true, resetTracking: false });
+
+  try {
+    var res = await fetch('/api/recordings/' + encodeURIComponent(username) + '/' + encodeURIComponent(filename), {
+      method: 'DELETE'
+    });
+
+    if (!res.ok) {
+      showNotification('Failed to delete recording', 'error');
+      return;
+    }
+
+    showNotification('Recording deleted', 'success');
+
+    await showModelRecordings(username);
+
+    if (currentDetailRecordings.length > 0) {
+      var nextIndex = Math.min(Math.max(currentIndex, 0), currentDetailRecordings.length - 1);
+      var nextRec = currentDetailRecordings[nextIndex];
+      if (nextRec) {
+        await playRecording(
+          username,
+          nextRec.filename,
+          nextRec.recordingId || '',
+          nextIndex
+        );
+        return;
+      }
+    }
+
+    // No more recordings for this model: stay on model list view.
+    currentPlayingRecordingId = '';
+    currentPlayingUsername = '';
+    currentPlayingFilename = '';
+    currentPlayingIndex = -1;
+  } catch (e) {
+    console.error('Error deleting current recording:', e);
+    showNotification('Connection error', 'error');
+  }
 }
 
 // ============================================
@@ -403,6 +504,9 @@ async function deleteRecording(username, filename, btn) {
 
     if (res.ok) {
       showNotification('Recording deleted', 'success');
+      currentDetailRecordings = currentDetailRecordings.filter(function(rec) {
+        return rec.filename !== filename;
+      });
       // Reload detail view
       if (currentDetailUser) {
         showModelRecordings(currentDetailUser);
@@ -543,6 +647,7 @@ window.addEventListener('DOMContentLoaded', function() {
   var style = document.createElement('style');
   style.textContent = '@keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }';
   document.head.appendChild(style);
+  document.addEventListener('keydown', handlePlayerKeydown);
 
   var loadingState = document.getElementById('loadingState');
 

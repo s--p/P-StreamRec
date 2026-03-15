@@ -446,7 +446,7 @@ async def monitor_models_task(
                     await asyncio.sleep(MONITOR_INTERVAL)
                     continue
                 
-                logger.debug("Vérification des modèles", count=len(models))
+                logger.debug("Checking models", count=len(models))
                 
                 # Récupérer les sessions actives
                 active_sessions = manager.list_status()
@@ -485,7 +485,7 @@ async def monitor_models_task(
                                 effective_online = True
                                 status['viewers'] = int(model.get('viewers', 0) or 0)
                                 logger.debug(
-                                    "Statut conservé (entprellung)",
+                                    "Status kept during transient failure",
                                     username=username,
                                     failures=failures,
                                     threshold=offline_failure_threshold,
@@ -504,28 +504,67 @@ async def monitor_models_task(
                         if is_recording and active_session:
                             session_id = active_session.get("id")
                             record_path = active_session.get("record_path")
+                            log_path = active_session.get("log_path")
                             if session_id and record_path:
                                 try:
                                     current_size = Path(record_path).stat().st_size
                                 except Exception:
                                     current_size = -1
 
+                                try:
+                                    current_log_size = Path(log_path).stat().st_size if log_path else -1
+                                except Exception:
+                                    current_log_size = -1
+
                                 now = time.time()
                                 progress = recording_progress.get(session_id)
-                                if not progress or current_size > progress.get("size", -1):
+                                # Reset baseline when the recording file path changes (segment rotation)
+                                # or when file size is lower than the previous baseline.
+                                if (
+                                    not progress
+                                    or progress.get("path") != record_path
+                                    or current_size < progress.get("size", -1)
+                                ):
                                     recording_progress[session_id] = {
+                                        "path": record_path,
                                         "size": current_size,
                                         "updated_at": now,
+                                        "log_size": current_log_size,
+                                        "log_updated_at": now,
                                     }
-                                else:
+                                elif current_size > progress.get("size", -1):
+                                    recording_progress[session_id] = {
+                                        "path": record_path,
+                                        "size": current_size,
+                                        "updated_at": now,
+                                        "log_size": current_log_size,
+                                        "log_updated_at": now,
+                                    }
+                                elif current_size >= 0:
+                                    previous_log_size = progress.get("log_size", -1)
+                                    if current_log_size > previous_log_size:
+                                        progress["log_size"] = current_log_size
+                                        progress["log_updated_at"] = now
+
                                     stalled_for = now - float(progress.get("updated_at", now))
-                                    if stalled_for >= MONITOR_RECORDING_STALL_SECONDS:
+                                    log_idle_for = now - float(progress.get("log_updated_at", now))
+
+                                    # If ffmpeg keeps producing log output (e.g. transient 503 retry loop),
+                                    # allow a longer grace period before forcing a restart.
+                                    hard_restart_after = MONITOR_RECORDING_STALL_SECONDS * 3
+                                    should_restart = (
+                                        (stalled_for >= MONITOR_RECORDING_STALL_SECONDS and log_idle_for >= MONITOR_RECORDING_STALL_SECONDS)
+                                        or stalled_for >= hard_restart_after
+                                    )
+
+                                    if should_restart:
                                         logger.warning(
-                                            "Enregistrement bloqué, redémarrage session",
+                                            "Recording stalled, restarting session",
                                             task="monitor",
                                             username=username,
                                             session_id=session_id,
                                             stalled_for_seconds=f"{stalled_for:.0f}",
+                                            log_idle_for_seconds=f"{log_idle_for:.0f}",
                                             file_size=current_size,
                                         )
                                         manager.stop_session(session_id)
@@ -553,7 +592,7 @@ async def monitor_models_task(
                                     recovered_hls = await resolve_m3u8_async(username)
                                 except Exception as e:
                                     logger.debug(
-                                        "Recovery resolver async échoué",
+                                        "Recovery async resolver failed",
                                         username=username,
                                         error=str(e),
                                     )
@@ -563,7 +602,7 @@ async def monitor_models_task(
                                         recovered_hls = await chaturbate_api.get_edge_hls_url(username)
                                     except Exception as e:
                                         logger.debug(
-                                            "Recovery edge hls échoué",
+                                            "Recovery edge HLS fetch failed",
                                             username=username,
                                             error=str(e),
                                         )
@@ -578,27 +617,27 @@ async def monitor_models_task(
                                         if sess:
                                             is_recording = True
                                             logger.success(
-                                                "Recovery auto-record démarré",
+                                                "Recovery auto-record started",
                                                 task="monitor",
                                                 username=username,
                                                 session_id=sess.id,
                                             )
                                     except RuntimeError as e:
                                         logger.debug(
-                                            "Recovery skip (session déjà active)",
+                                            "Recovery skipped (session already active)",
                                             username=username,
                                             error=str(e),
                                         )
                                     except Exception as e:
                                         logger.warning(
-                                            "Recovery auto-record échoué",
+                                            "Recovery auto-record failed",
                                             task="monitor",
                                             username=username,
                                             error=str(e),
                                         )
                                 else:
                                     logger.debug(
-                                        "Recovery: pas de HLS disponible",
+                                        "Recovery: no HLS available",
                                         task="monitor",
                                         username=username,
                                     )
@@ -652,7 +691,7 @@ async def monitor_models_task(
                         # Mettre à jour le cache des enregistrements
                         await update_recordings_cache(db, username, OUTPUT_DIR, ffmpeg_path)
                         
-                        logger.debug("Modèle mis à jour",
+                        logger.debug("Model status updated",
                                    username=username,
                                    is_online=effective_online,
                                    request_ok=status_request_ok,
@@ -660,7 +699,7 @@ async def monitor_models_task(
                                    viewers=status['viewers'])
                     
                     except Exception as e:
-                        logger.error("Erreur monitoring modèle",
+                        logger.error("Model monitoring error",
                                    username=username,
                                    error=str(e),
                                    exc_info=True)

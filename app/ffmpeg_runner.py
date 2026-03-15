@@ -59,12 +59,12 @@ class FFmpegSession:
     def _writer_loop(self):
         """Read TS from ffmpeg stdout and append to TS files (optional time-based rotation)."""
         if not self.process or not self.process.stdout:
-            logger.warning("Writer loop: pas de processus ou stdout", session_id=self.id)
+            logger.warning("Writer loop: missing process or stdout", session_id=self.id)
             return
             
         os.makedirs(self.records_dir_for_person, exist_ok=True)
         
-        logger.info("Writer loop démarré", 
+        logger.info("Writer loop started", 
                    session_id=self.id, 
                    person=self.person,
                    record_path=self.record_path,
@@ -79,7 +79,7 @@ class FFmpegSession:
             while not self._stop_evt.is_set():
                 chunk = self.process.stdout.read(64 * 1024)
                 if not chunk:
-                    logger.info("Writer loop: fin du flux", 
+                    logger.info("Writer loop: stream ended", 
                                session_id=self.id,
                                total_bytes=total_bytes,
                                chunk_count=chunk_count)
@@ -105,7 +105,7 @@ class FFmpegSession:
                     current_file_started_at = time.time()
 
                     logger.info(
-                        "Rotation fichier enregistrement",
+                        "Recording file rotated",
                         session_id=self.id,
                         person=self.person,
                         previous_file=os.path.basename(old_record_path),
@@ -115,13 +115,13 @@ class FFmpegSession:
                 
                 # Log tous les 100MB
                 if total_bytes % (100 * 1024 * 1024) < 64 * 1024:
-                    logger.debug("Progression écriture", 
+                    logger.debug("Write progress", 
                                session_id=self.id,
                                bytes_written=total_bytes,
                                mb_written=f"{total_bytes / 1024 / 1024:.1f}")
                     
         except Exception as e:
-            logger.error("Erreur dans writer loop", 
+            logger.error("Writer loop error", 
                         session_id=self.id, 
                         exc_info=True,
                         total_bytes=total_bytes)
@@ -129,12 +129,12 @@ class FFmpegSession:
             try:
                 f.flush()
                 f.close()
-                logger.info("Writer loop terminé", 
+                logger.info("Writer loop finished", 
                            session_id=self.id,
                            total_bytes=total_bytes,
                            mb_written=f"{total_bytes / 1024 / 1024:.1f}")
             except Exception as e:
-                logger.error("Erreur fermeture finale fichier", 
+                logger.error("Final file close failed", 
                            session_id=self.id, 
                            error=str(e))
 
@@ -252,7 +252,7 @@ class FFmpegManager:
                 sess.process = proc
                 self._sessions[sess.id] = sess
                 
-                logger.success("Processus FFmpeg démarré", 
+                logger.success("FFmpeg process started", 
                              session_id=session_id, 
                              pid=proc.pid,
                              person=person)
@@ -262,17 +262,17 @@ class FFmpegManager:
                 sess._writer_thread = t
                 t.start()
                 
-                logger.info("Thread d'écriture TS démarré", 
+                logger.info("TS writer thread started", 
                           session_id=session_id, 
                           thread_name=t.name)
-                logger.success("Session FFmpeg prête", 
+                logger.success("FFmpeg session ready", 
                              session_id=session_id,
                              person=person,
                              playback_url=sess.playback_url,
                              record_path=sess.record_path_today())
                 
             except Exception as e:
-                logger.critical("Erreur démarrage FFmpeg", 
+                logger.critical("FFmpeg start failed", 
                               exc_info=True,
                               session_id=session_id,
                               person=person,
@@ -294,56 +294,67 @@ class FFmpegManager:
             
             if sess.process and sess.process.poll() is None:
                 try:
-                    logger.debug("Arrêt événement writer", session_id=session_id)
+                    logger.debug("Stopping writer event", session_id=session_id)
                     sess._stop_evt.set()
                     
-                    logger.debug("Terminate processus FFmpeg", session_id=session_id, pid=sess.process.pid)
+                    logger.debug("Terminate FFmpeg process", session_id=session_id, pid=sess.process.pid)
                     sess.process.terminate()
                     
                     try:
                         sess.process.wait(timeout=10)
-                        logger.info("Processus FFmpeg terminé proprement", session_id=session_id)
+                        logger.info("FFmpeg process terminated cleanly", session_id=session_id)
                     except subprocess.TimeoutExpired:
-                        logger.warning("Timeout terminate, kill forcé", session_id=session_id)
+                        logger.warning("Terminate timeout, force kill", session_id=session_id)
                         sess.process.kill()
                 except Exception as e:
-                    logger.error("Erreur arrêt processus FFmpeg", 
+                    logger.error("Error while stopping FFmpeg process", 
                                session_id=session_id, 
                                error=str(e))
                                
             if sess._writer_thread and sess._writer_thread.is_alive():
                 try:
-                    logger.debug("Attente fin thread writer", session_id=session_id)
+                    logger.debug("Waiting for writer thread to finish", session_id=session_id)
                     sess._writer_thread.join(timeout=2)
                     if sess._writer_thread.is_alive():
-                        logger.warning("Thread writer toujours actif après timeout", session_id=session_id)
+                        logger.warning("Writer thread still alive after timeout", session_id=session_id)
                     else:
-                        logger.debug("Thread writer terminé", session_id=session_id)
+                        logger.debug("Writer thread finished", session_id=session_id)
                 except Exception as e:
-                    logger.error("Erreur join thread writer", 
+                    logger.error("Writer thread join failed", 
                                session_id=session_id, 
                                error=str(e))
             
-            logger.success("Session arrêtée", 
+            logger.success("Session stopped", 
                           session_id=session_id, 
                           person=sess.person,
                           duration_seconds=f"{duration:.1f}")
+            self._sessions.pop(session_id, None)
             return True
 
     def list_status(self) -> List[dict]:
         with self._lock:
             out = []
-            for sess in self._sessions.values():
+            stale_ids = []
+            for sid, sess in self._sessions.items():
+                running = sess.is_running()
+                if not running:
+                    stale_ids.append(sid)
+                    continue
                 out.append({
                     "id": sess.id,
                     "person": sess.person,
                     "name": sess.name,
                     "input_url": sess.input_url,
                     "created_at": sess.created_at,
-                    "running": sess.is_running(),
+                    "running": running,
                     "playback_url": sess.playback_url,
                     "record_path": sess.record_path,
+                    "log_path": sess.log_path,
                     "start_date": sess.start_date,
                 })
-            logger.debug("Liste status sessions", count=len(out), sessions=[s["id"] for s in out])
+
+            for sid in stale_ids:
+                self._sessions.pop(sid, None)
+
+            logger.debug("Session status list", count=len(out), sessions=[s["id"] for s in out])
             return out

@@ -35,7 +35,7 @@ async def auto_record_task(manager: 'FFmpegManager'):
     Tâche d'auto-enregistrement en arrière-plan
     Vérifie les modèles toutes les 2 minutes et lance les enregistrements
     """
-    logger.background_task("auto-record", "Démarrage")
+    logger.background_task("auto-record", "Starting")
     
     while True:
         try:
@@ -44,7 +44,7 @@ async def auto_record_task(manager: 'FFmpegManager'):
             # Charger les modèles
             models = load_models()
             if not models:
-                logger.debug("Aucun modèle à surveiller", task="auto-record")
+                logger.debug("No models to monitor", task="auto-record")
                 continue
             
             logger.background_task("auto-record", f"Vérification de {len(models)} modèles")
@@ -61,7 +61,7 @@ async def auto_record_task(manager: 'FFmpegManager'):
                 
                 # Vérifier si l'auto-record est activé pour ce modèle
                 if not auto_record:
-                    logger.debug("Auto-record désactivé", 
+                    logger.debug("Auto-record disabled", 
                                task="auto-record",
                                username=username)
                     continue
@@ -73,14 +73,14 @@ async def auto_record_task(manager: 'FFmpegManager'):
                 )
                 
                 if is_recording:
-                    logger.debug("Déjà en enregistrement", 
+                    logger.debug("Already recording", 
                                task="auto-record",
                                username=username)
                     continue
                 
                 # Vérifier si le modèle est en ligne
                 try:
-                    logger.debug("Vérification statut en ligne", 
+                    logger.debug("Checking online status", 
                                task="auto-record",
                                username=username)
                     
@@ -98,7 +98,7 @@ async def auto_record_task(manager: 'FFmpegManager'):
                         
                         if hls_source:
                             # Modèle en ligne avec flux HLS disponible
-                            logger.info("Modèle en ligne détecté", 
+                            logger.info("Online model detected", 
                                       task="auto-record",
                                       username=username)
                             
@@ -111,30 +111,30 @@ async def auto_record_task(manager: 'FFmpegManager'):
                                 )
                                 
                                 if session_id:
-                                    logger.success("Auto-enregistrement démarré", 
+                                    logger.success("Auto-record started", 
                                                  task="auto-record",
                                                  username=username,
                                                  session_id=session_id.id)
                             except Exception as e:
-                                logger.error("Erreur démarrage auto-enregistrement",
+                                logger.error("Auto-record start failed",
                                            task="auto-record",
                                            username=username,
                                            exc_info=True,
                                            error=str(e))
                         else:
-                            logger.debug("Modèle hors ligne", 
+                            logger.debug("Model offline", 
                                        task="auto-record",
                                        username=username)
                             
                 except Exception as e:
-                    logger.error("Erreur vérification modèle",
+                    logger.error("Model check failed",
                                task="auto-record",
                                username=username,
                                error=str(e))
                     continue
                 
         except Exception as e:
-            logger.error("Erreur dans auto-record task", 
+            logger.error("Auto-record task failed", 
                         task="auto-record",
                         exc_info=True,
                         error=str(e))
