@@ -12,6 +12,7 @@ let currentPlayingUsername = '';
 let currentPlayingFilename = '';
 let currentPlayingIndex = -1;
 let currentDetailRecordings = [];
+const GLOBAL_VOLUME_KEY = 'pstreamrec_global_volume';
 
 // ============================================
 // Load recordings grouped by model
@@ -88,6 +89,53 @@ function formatDate(timestamp) {
   }
 }
 
+function getSavedGlobalVolume() {
+  try {
+    var raw = localStorage.getItem(GLOBAL_VOLUME_KEY);
+    if (raw === null || raw === undefined || raw === '') return 0.7;
+    var parsed = parseFloat(raw);
+    if (!isFinite(parsed)) return 0.7;
+    return Math.max(0, Math.min(1, parsed));
+  } catch (e) {
+    return 0.7;
+  }
+}
+
+function saveGlobalVolume(volume) {
+  try {
+    var clamped = Math.max(0, Math.min(1, Number(volume) || 0));
+    localStorage.setItem(GLOBAL_VOLUME_KEY, String(clamped));
+  } catch (e) {}
+}
+
+function applyGlobalVolume(video) {
+  var vol = getSavedGlobalVolume();
+  video.volume = vol;
+  video.muted = vol === 0;
+}
+
+function updatePlayerNavButtons() {
+  var prevBtn = document.getElementById('playerPrevBtn');
+  var nextBtn = document.getElementById('playerNextBtn');
+  var hasItems = currentDetailRecordings.length > 0;
+  var hasIndex = currentPlayingIndex >= 0;
+
+  if (prevBtn) {
+    prevBtn.disabled = !(hasItems && hasIndex && currentPlayingIndex > 0);
+  }
+  if (nextBtn) {
+    nextBtn.disabled = !(hasItems && hasIndex && currentPlayingIndex < currentDetailRecordings.length - 1);
+  }
+}
+
+async function openRecordingByIndex(index) {
+  if (!currentDetailRecordings.length) return;
+  var clamped = Math.max(0, Math.min(index, currentDetailRecordings.length - 1));
+  var rec = currentDetailRecordings[clamped];
+  if (!rec) return;
+  await playRecording(currentDetailUser || currentPlayingUsername, rec.filename, rec.recordingId || '', clamped);
+}
+
 // ============================================
 // Render model cards grid
 // ============================================
@@ -154,6 +202,7 @@ async function showModelRecordings(username) {
     document.getElementById('detailCount').textContent = recordings.length + ' recording' + (recordings.length !== 1 ? 's' : '');
 
     if (recordings.length === 0) {
+      currentDetailRecordings = [];
       list.innerHTML = '<div class="empty-message"><div class="icon">&#127910;</div><p>No recordings found.</p></div>';
       return;
     }
@@ -227,6 +276,7 @@ function showModelGrid() {
   document.getElementById('recordingsDetail').style.display = 'none';
   currentDetailUser = '';
   currentDetailRecordings = [];
+  updatePlayerNavButtons();
 }
 
 // ============================================
@@ -248,10 +298,14 @@ async function playRecording(username, filename, recordingId, index) {
       return rec.filename === filename;
     });
   }
+  if (currentPlayingIndex < 0) {
+    currentPlayingIndex = 0;
+  }
 
   title.textContent = username + ' - ' + filename;
   modal.style.display = 'flex';
   document.body.classList.add('player-modal-open');
+  updatePlayerNavButtons();
 
   var playerBackBtn = document.getElementById('playerBackBtn');
   if (playerBackBtn) {
@@ -260,6 +314,10 @@ async function playRecording(username, filename, recordingId, index) {
 
   // Focus the player immediately so keyboard arrows can scrub without clicking first.
   video.setAttribute('tabindex', '0');
+  applyGlobalVolume(video);
+  video.onvolumechange = function() {
+    saveGlobalVolume(video.muted ? 0 : video.volume);
+  };
   setTimeout(function() { video.focus(); }, 0);
 
   var url = '/streams/records/' + encodeURIComponent(username) + '/' + encodeURIComponent(filename);
@@ -331,7 +389,13 @@ function handlePlayerKeydown(event) {
   var video = document.getElementById('recordingPlayer');
   if (!video || !isFinite(video.duration) || video.duration <= 0) return;
 
-  if (event.key === 'ArrowRight') {
+  if (event.altKey && event.key === 'ArrowLeft') {
+    event.preventDefault();
+    playPreviousRecording();
+  } else if (event.altKey && event.key === 'ArrowRight') {
+    event.preventDefault();
+    playNextRecording();
+  } else if (event.key === 'ArrowRight') {
     event.preventDefault();
     video.currentTime = Math.min(video.duration, video.currentTime + 5);
   } else if (event.key === 'ArrowLeft') {
@@ -380,6 +444,7 @@ async function closePlayer(options) {
     currentPlayer = null;
   }
   video.removeAttribute('src');
+  video.onvolumechange = null;
   delete video.dataset.retried;
   // Remove any <source> elements added for TS fallback
   while (video.firstChild) { video.removeChild(video.firstChild); }
@@ -414,6 +479,7 @@ async function closePlayer(options) {
     currentPlayingUsername = '';
     currentPlayingFilename = '';
     currentPlayingIndex = -1;
+    updatePlayerNavButtons();
   }
 }
 
@@ -434,7 +500,12 @@ async function deleteCurrentPlayingRecording() {
 
   var username = currentPlayingUsername;
   var filename = currentPlayingFilename;
-  var currentIndex = currentPlayingIndex;
+  var removedIndex = currentDetailRecordings.findIndex(function(rec) {
+    return rec.filename === filename;
+  });
+  if (removedIndex < 0) {
+    removedIndex = Math.max(currentPlayingIndex, 0);
+  }
 
   await closePlayer({ skipSave: true, skipAutoDelete: true, resetTracking: false });
 
@@ -453,17 +524,9 @@ async function deleteCurrentPlayingRecording() {
     await showModelRecordings(username);
 
     if (currentDetailRecordings.length > 0) {
-      var nextIndex = Math.min(Math.max(currentIndex, 0), currentDetailRecordings.length - 1);
-      var nextRec = currentDetailRecordings[nextIndex];
-      if (nextRec) {
-        await playRecording(
-          username,
-          nextRec.filename,
-          nextRec.recordingId || '',
-          nextIndex
-        );
-        return;
-      }
+      var previousIndex = Math.max(removedIndex - 1, 0);
+      await openRecordingByIndex(previousIndex);
+      return;
     }
 
     // No more recordings for this model: stay on model list view.
@@ -471,10 +534,21 @@ async function deleteCurrentPlayingRecording() {
     currentPlayingUsername = '';
     currentPlayingFilename = '';
     currentPlayingIndex = -1;
+    updatePlayerNavButtons();
   } catch (e) {
     console.error('Error deleting current recording:', e);
     showNotification('Connection error', 'error');
   }
+}
+
+async function playPreviousRecording() {
+  if (currentPlayingIndex <= 0) return;
+  await openRecordingByIndex(currentPlayingIndex - 1);
+}
+
+async function playNextRecording() {
+  if (currentPlayingIndex < 0 || currentPlayingIndex >= currentDetailRecordings.length - 1) return;
+  await openRecordingByIndex(currentPlayingIndex + 1);
 }
 
 // ============================================

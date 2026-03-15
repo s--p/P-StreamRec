@@ -1120,17 +1120,53 @@ async def get_all_recordings(
             "createdAt": rec.get("created_at"),
         })
 
-    # Get distinct usernames for filter dropdown
-    usernames = await db.get_distinct_recording_usernames()
+    # Compute totals from actual files on disk to avoid stale DB aggregate drift.
+    records_root = OUTPUT_DIR / "records"
+    total_count = 0
+    total_size = 0
+    usernames = []
+
+    if records_root.exists():
+        if username:
+            model_dirs = [records_root / username]
+        else:
+            model_dirs = [p for p in records_root.iterdir() if p.is_dir()]
+
+        for model_dir in model_dirs:
+            if not model_dir.exists() or not model_dir.is_dir():
+                continue
+
+            model_has_files = False
+            for f in model_dir.iterdir():
+                if not f.is_file():
+                    continue
+
+                ext = f.suffix.lower()
+                include_file = ext == ".mp4" or (show_ts and ext == ".ts")
+                if not include_file:
+                    continue
+
+                try:
+                    total_count += 1
+                    total_size += f.stat().st_size
+                    model_has_files = True
+                except Exception:
+                    continue
+
+            if model_has_files:
+                usernames.append(model_dir.name)
+
+    usernames = sorted(set(usernames))
+    total_pages = max(1, (total_count + limit - 1) // limit)
 
     return {
         "recordings": recordings,
-        "total": result["total"],
-        "totalSize": result["total_size"],
-        "totalSizeFormatted": format_bytes(result["total_size"]),
+        "total": total_count,
+        "totalSize": total_size,
+        "totalSizeFormatted": format_bytes(total_size),
         "page": result["page"],
         "limit": result["limit"],
-        "totalPages": result["total_pages"],
+        "totalPages": total_pages,
         "usernames": usernames,
     }
 
@@ -1946,36 +1982,60 @@ async def save_playback_position(recording_id: str, body: dict):
 @app.get("/api/recordings-by-model")
 async def get_recordings_by_model(show_ts: bool = False):
     """Get recordings grouped by model with stats, including tracked models with 0 recordings."""
-    groups = await db.get_recordings_grouped_by_model(show_ts=show_ts)
 
     # Build a lookup of auto_record status
     all_models = await db.get_all_models()
     auto_record_map = {m["username"]: bool(m.get("auto_record")) for m in all_models}
 
-    # Build a set of usernames that have recordings
-    usernames_with_recordings = set()
+    result_map = {}
+    records_root = OUTPUT_DIR / "records"
 
-    # Always include models that already have recordings, even if auto-record is disabled.
-    result = []
-    for group in groups:
-        username = group["username"]
-        usernames_with_recordings.add(username)
-        thumb_url = f"/api/thumbnail/{username}"
-        result.append({
-            "username": username,
-            "recordingCount": group["recording_count"],
-            "totalSize": group["total_size"],
-            "lastRecordingAt": group["last_recording_at"],
-            "totalDuration": group["total_duration"],
-            "thumbnail": thumb_url,
-            "autoRecord": auto_record_map.get(username, True),
-        })
+    if records_root.exists():
+        for model_dir in records_root.iterdir():
+            if not model_dir.is_dir():
+                continue
 
-    # Also include tracked models that have 0 recordings.
+            username = model_dir.name
+            recording_count = 0
+            total_size = 0
+            last_recording_at = None
+
+            for f in model_dir.iterdir():
+                if not f.is_file():
+                    continue
+
+                ext = f.suffix.lower()
+                include_file = ext == ".mp4" or (show_ts and ext == ".ts")
+                if not include_file:
+                    continue
+
+                try:
+                    stat = f.stat()
+                except Exception:
+                    continue
+
+                recording_count += 1
+                total_size += stat.st_size
+                mtime = int(stat.st_mtime)
+                if last_recording_at is None or mtime > last_recording_at:
+                    last_recording_at = mtime
+
+            if recording_count > 0:
+                result_map[username] = {
+                    "username": username,
+                    "recordingCount": recording_count,
+                    "totalSize": total_size,
+                    "lastRecordingAt": last_recording_at,
+                    "totalDuration": 0,
+                    "thumbnail": f"/api/thumbnail/{username}",
+                    "autoRecord": auto_record_map.get(username, True),
+                }
+
+    # Also include tracked models that currently have 0 recordings.
     for model in all_models:
         username = model["username"]
-        if username not in usernames_with_recordings:
-            result.append({
+        if username not in result_map:
+            result_map[username] = {
                 "username": username,
                 "recordingCount": 0,
                 "totalSize": 0,
@@ -1983,7 +2043,13 @@ async def get_recordings_by_model(show_ts: bool = False):
                 "totalDuration": 0,
                 "thumbnail": f"/api/thumbnail/{username}",
                 "autoRecord": bool(model.get("auto_record", True)),
-            })
+            }
+
+    result = sorted(
+        result_map.values(),
+        key=lambda item: (item.get("lastRecordingAt") or 0, item.get("username") or ""),
+        reverse=True,
+    )
 
     return {"models": result}
 
@@ -2315,6 +2381,7 @@ async def sync_following_task(chaturbate_api, auth_service):
                         username=model["username"],
                         display_name=model.get("display_name"),
                         is_online=model.get("is_online", False),
+                        show_status=model.get("show_status"),
                         viewers=model.get("viewers", 0),
                         thumbnail_url=model.get("thumbnail_url"),
                     )

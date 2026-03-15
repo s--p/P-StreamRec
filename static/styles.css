@@ -1578,6 +1578,15 @@ button {
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 15px rgba(34, 197, 94, 0.2);
 }
 
+.following-card.is-private {
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.following-card.is-private:hover {
+  border-color: var(--warning);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), 0 0 15px rgba(245, 158, 11, 0.25);
+}
+
 .following-card-thumb {
   position: relative;
   cursor: pointer;
@@ -1630,6 +1639,16 @@ button {
   background: rgba(239, 68, 68, 0.15);
   color: var(--danger);
   border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.private-badge-sm {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.16);
+  color: var(--warning);
+  border: 1px solid rgba(245, 158, 11, 0.38);
 }
 
 .offline-badge-sm {
@@ -3131,6 +3150,24 @@ button {
   z-index: 5;
 }
 
+.player-modal-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
+.player-nav-btn {
+  min-height: 36px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.player-nav-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .player-back-btn,
 .player-delete-btn {
   font-size: 0.85rem;
@@ -3240,6 +3277,7 @@ body.player-modal-open {
   }
 
   .player-modal-left-actions,
+  .player-modal-nav-actions,
   .player-modal-right-actions {
     width: 100%;
     justify-content: space-between;
