@@ -116,6 +116,26 @@ function setOfflineStatus() {
 // ============================================
 async function loadModelStatus() {
   try {
+    // When player is already active, do not poll stream URL.
+    // Token rotations can cause unnecessary player re-initializations.
+    if (hlsPlayer) {
+      consecutiveOfflineChecks = 0;
+
+      fetch('/api/model/' + currentUsername + '/status')
+        .then(function(res) { return res.ok ? res.json() : null; })
+        .then(function(data) {
+          if (data) {
+            setLiveStatus(data.viewers || 0);
+          } else {
+            setLiveStatus(0);
+          }
+        })
+        .catch(function() {
+          setLiveStatus(0);
+        });
+      return;
+    }
+
     // Stream-first strategy: this endpoint is the most reliable source of truth.
     var streamUrl = await probeStreamUrl();
 
@@ -139,18 +159,6 @@ async function loadModelStatus() {
       if (!hlsPlayer) {
         startStreamWithUrl(streamUrl);
         return;
-      }
-
-      // Do not hard-restart the player on token-only URL rotation.
-      // This avoids visible refreshes and quality drops every status poll.
-      if (currentStreamUrl && currentStreamUrl !== streamUrl) {
-        var oldBase = stripQuery(currentStreamUrl);
-        var newBase = stripQuery(streamUrl);
-        if (oldBase !== newBase) {
-          startStreamWithUrl(streamUrl);
-          return;
-        }
-        currentStreamUrl = streamUrl;
       }
       return;
     }

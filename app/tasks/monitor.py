@@ -452,6 +452,8 @@ async def monitor_models_task(
         restart_attempts = {}
         # Track recording file growth to detect stalled ffmpeg sessions.
         recording_progress = {}
+        # Track when a running session was first observed by monitor.
+        session_first_seen_at = {}
         # Throttle expensive HLS probes when API status reports offline.
         offline_hls_probe_at = {}
         # Track previous loop recording state to detect unexpected drops.
@@ -488,6 +490,7 @@ async def monitor_models_task(
                 for stale_id in list(recording_progress.keys()):
                     if stale_id not in running_session_ids:
                         recording_progress.pop(stale_id, None)
+                        session_first_seen_at.pop(stale_id, None)
                 
                 # Vérifier chaque modèle
                 for model in models:
@@ -608,6 +611,9 @@ async def monitor_models_task(
                             record_path = active_session.get("record_path")
                             log_path = active_session.get("log_path")
                             if session_id and record_path:
+                                if session_id not in session_first_seen_at:
+                                    session_first_seen_at[session_id] = time.time()
+
                                 try:
                                     current_size = Path(record_path).stat().st_size
                                 except Exception:
@@ -655,8 +661,15 @@ async def monitor_models_task(
 
                                     stalled_for = now - float(progress.get("updated_at", now))
                                     log_idle_for = now - float(progress.get("log_updated_at", now))
-                                    session_started_at = float(active_session.get("started_at_unix", now) or now)
-                                    session_age = max(0.0, now - session_started_at)
+                                    session_started_at_raw = active_session.get("started_at_unix")
+                                    if session_started_at_raw is not None:
+                                        try:
+                                            session_started_at = float(session_started_at_raw)
+                                        except (TypeError, ValueError):
+                                            session_started_at = session_first_seen_at.get(session_id, now)
+                                    else:
+                                        session_started_at = session_first_seen_at.get(session_id, now)
+                                    session_age = max(0.0, now - float(session_started_at))
 
                                     # If ffmpeg keeps producing log output (e.g. transient 503 retry loop),
                                     # allow a longer grace period before forcing a restart.
