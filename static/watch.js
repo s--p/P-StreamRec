@@ -17,6 +17,12 @@ let restartTimer = null;
 let currentStreamUrl = '';
 const GLOBAL_VOLUME_KEY = 'pstreamrec_global_volume';
 
+function stripQuery(url) {
+  if (!url) return '';
+  var q = url.indexOf('?');
+  return q >= 0 ? url.slice(0, q) : url;
+}
+
 function getSavedGlobalVolume() {
   try {
     var raw = localStorage.getItem(GLOBAL_VOLUME_KEY);
@@ -135,9 +141,16 @@ async function loadModelStatus() {
         return;
       }
 
-      // Refresh URL when tokenized URL rotates.
+      // Do not hard-restart the player on token-only URL rotation.
+      // This avoids visible refreshes and quality drops every status poll.
       if (currentStreamUrl && currentStreamUrl !== streamUrl) {
-        startStreamWithUrl(streamUrl);
+        var oldBase = stripQuery(currentStreamUrl);
+        var newBase = stripQuery(streamUrl);
+        if (oldBase !== newBase) {
+          startStreamWithUrl(streamUrl);
+          return;
+        }
+        currentStreamUrl = streamUrl;
       }
       return;
     }

@@ -454,6 +454,10 @@ async def monitor_models_task(
         recording_progress = {}
         # Throttle expensive HLS probes when API status reports offline.
         offline_hls_probe_at = {}
+        # Track previous loop recording state to detect unexpected drops.
+        previous_recording_state = {}
+        # Cache last known good HLS URL per model for fast restart attempts.
+        last_known_hls = {}
 
         try:
             restart_cooldown_seconds = max(
@@ -524,7 +528,13 @@ async def monitor_models_task(
                             None
                         )
                         is_recording = active_session is not None
+                        dropped_session = bool(previous_recording_state.get(username, False) and not is_recording)
                         auto_record_enabled = bool(model.get('auto_record', True))
+
+                        if status.get("hls_source"):
+                            last_known_hls[username] = status.get("hls_source")
+                        elif active_session and active_session.get("input_url"):
+                            last_known_hls[username] = active_session.get("input_url")
 
                         # chatvideocontext can occasionally return false negatives (online stream but is_online=False).
                         # Probe HLS directly in a throttled manner so auto-record can still start promptly.
@@ -690,10 +700,11 @@ async def monitor_models_task(
                         ):
                             now = time.time()
                             last_try = restart_attempts.get(username, 0)
+                            force_recovery = dropped_session
 
-                            if now - last_try >= restart_cooldown_seconds:
+                            if force_recovery or now - last_try >= restart_cooldown_seconds:
                                 restart_attempts[username] = now
-                                recovered_hls = status.get("hls_source")
+                                recovered_hls = status.get("hls_source") or last_known_hls.get(username)
 
                                 if not recovered_hls:
                                     try:
@@ -728,6 +739,7 @@ async def monitor_models_task(
                                         )
 
                                 if recovered_hls:
+                                    last_known_hls[username] = recovered_hls
                                     try:
                                         sess = manager.start_session(
                                             input_url=recovered_hls,
@@ -762,6 +774,7 @@ async def monitor_models_task(
                                         username=username,
                                         room_status=status.get("room_status"),
                                         is_recordable=effective_recordable,
+                                        dropped_session=dropped_session,
                                     )
                         else:
                             # Reset attempt timer when model is offline or already recording.
@@ -821,6 +834,8 @@ async def monitor_models_task(
                                    request_ok=status_request_ok,
                                    is_recording=is_recording,
                                    viewers=status['viewers'])
+
+                        previous_recording_state[username] = is_recording
                     
                     except Exception as e:
                         logger.error("Model monitoring error",
