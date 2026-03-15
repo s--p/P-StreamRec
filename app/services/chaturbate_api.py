@@ -27,6 +27,22 @@ class ChaturbateAPI:
         self._semaphore = asyncio.Semaphore(2)
         self._last_request_time: float = 0
 
+    @staticmethod
+    def _is_api_html_response(url: str, content_type: str, body: bytes) -> bool:
+        """Detect HTML responses on JSON API endpoints (challenge/login pages)."""
+        if "/api/chatvideocontext/" not in url:
+            return False
+
+        ct = (content_type or "").lower()
+        if "application/json" in ct:
+            return False
+
+        if "text/html" in ct:
+            return True
+
+        probe = body[:4096].decode("utf-8", errors="ignore").lower()
+        return "<html" in probe or "?next=" in probe or "cloudflare" in probe or "cf-chl" in probe
+
     async def _rate_limit(self):
         """Apply rate limiting between requests"""
         now = time.time()
@@ -80,20 +96,16 @@ class ChaturbateAPI:
                             if resp.status == 403:
                                 should_bypass = True
                             elif resp.status == 200:
-                                # Chaturbate sometimes responds with HTML redirects/challenges
-                                # on API endpoints instead of JSON (e.g. /?next=/api/chatvideocontext/...).
-                                content_type = (resp.content_type or "").lower()
-                                if "text/html" in content_type:
-                                    probe = body[:4096].decode("utf-8", errors="ignore").lower()
-                                    if (
-                                        "?next=" in probe
-                                        or "cloudflare" in probe
-                                        or "cf-chl" in probe
-                                        or "chatvideocontext" in url
-                                    ):
-                                        should_bypass = True
-                                elif "/api/chatvideocontext/" in url and "application/json" not in content_type:
+                                if self._is_api_html_response(url, resp.content_type or "", body):
                                     should_bypass = True
+
+                        if self._is_api_html_response(url, resp.content_type or "", body):
+                            logger.debug(
+                                "API returned HTML response",
+                                url=url,
+                                status=resp.status,
+                                content_type=resp.content_type,
+                            )
 
                         if should_bypass and self.flaresolverr:
                             if "/api/chatvideocontext/" in url:
@@ -112,6 +124,13 @@ class ChaturbateAPI:
                                 cookies = solution.get("cookies", {})
                                 new_ua = solution.get("user_agent", "")
                                 solved_response = solution.get("response")
+
+                                await self.auth.merge_runtime_cookies(
+                                    cookies,
+                                    user_agent=new_ua or None,
+                                    source="flaresolverr",
+                                )
+
                                 if new_ua:
                                     retry_headers["User-Agent"] = new_ua
 
@@ -158,12 +177,26 @@ class ChaturbateAPI:
                                                 "application/json",
                                             )
 
+                                    if self._is_api_html_response(url, retry_resp.content_type or "", retry_body):
+                                        await self.auth.mark_session_issue(
+                                            "chatvideocontext returned HTML after FlareSolverr retry"
+                                        )
+                                        logger.warning(
+                                            "API still returned HTML after FlareSolverr retry",
+                                            url=url,
+                                            status=retry_resp.status,
+                                            content_type=retry_resp.content_type,
+                                        )
+
                                     return _FakeResponse(
                                         retry_resp.status,
                                         retry_body,
                                         retry_resp.headers,
                                         retry_resp.content_type
                                     )
+
+                        if self._is_api_html_response(url, resp.content_type or "", body):
+                            await self.auth.mark_session_issue("chatvideocontext returned HTML without bypass")
 
                         return _FakeResponse(
                             resp.status, body, resp.headers, resp.content_type
