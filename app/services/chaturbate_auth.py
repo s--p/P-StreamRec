@@ -284,6 +284,84 @@ class ChaturbateAuthService:
         except Exception:
             pass
 
+    async def merge_runtime_cookies(
+        self,
+        cookies: Dict[str, str],
+        user_agent: Optional[str] = None,
+        source: str = "runtime",
+    ):
+        """Merge cookies obtained at runtime (e.g. via FlareSolverr) and persist them."""
+        if not cookies and not user_agent:
+            return
+
+        changed = False
+        for key, value in (cookies or {}).items():
+            if value and self._cookies.get(key) != value:
+                self._cookies[key] = value
+                changed = True
+
+        if user_agent and self._user_agent != user_agent:
+            self._user_agent = user_agent
+            changed = True
+
+        if not changed:
+            return
+
+        if self._cookies.get("sessionid"):
+            self._is_logged_in = True
+
+        auth_state = await self.db.get_auth_state()
+        username = self._username or (auth_state.get("username") if auth_state else None)
+        password_hash = auth_state.get("password_hash", "") if auth_state else ""
+
+        if username:
+            try:
+                await self.db.save_auth_state(
+                    username=username,
+                    password_hash=password_hash,
+                    is_logged_in=bool(self._cookies.get("sessionid")),
+                    session_cookies=json.dumps(self._cookies),
+                    cf_clearance=self._cookies.get("cf_clearance"),
+                    csrf_token=self._cookies.get("csrftoken"),
+                    last_login_at=int(time.time()),
+                    last_error=None,
+                )
+            except Exception as e:
+                logger.debug("Could not persist runtime cookies in DB", error=str(e))
+
+        try:
+            self._cookies_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(self._cookies_file, "w") as f:
+                json.dump(self._cookies, f, indent=2)
+        except Exception as e:
+            logger.debug("Could not persist runtime cookies file", error=str(e))
+
+        logger.info(
+            "Merged runtime cookies",
+            source=source,
+            has_sessionid=bool(self._cookies.get("sessionid")),
+            has_csrftoken=bool(self._cookies.get("csrftoken")),
+        )
+
+    async def mark_session_issue(self, reason: str):
+        """Record a non-fatal session issue for diagnostics."""
+        self._last_error = reason
+        try:
+            auth_state = await self.db.get_auth_state()
+            if auth_state and auth_state.get("username"):
+                await self.db.save_auth_state(
+                    username=auth_state["username"],
+                    password_hash=auth_state.get("password_hash", ""),
+                    is_logged_in=bool(self._cookies.get("sessionid")),
+                    session_cookies=json.dumps(self._cookies) if self._cookies else None,
+                    cf_clearance=self._cookies.get("cf_clearance"),
+                    csrf_token=self._cookies.get("csrftoken"),
+                    last_login_at=auth_state.get("last_login_at"),
+                    last_error=reason,
+                )
+        except Exception:
+            pass
+
     async def ensure_session(self) -> Optional[aiohttp.ClientSession]:
         """Get an authenticated aiohttp session, re-login if expired"""
         if not self._is_logged_in or not self._cookies:
