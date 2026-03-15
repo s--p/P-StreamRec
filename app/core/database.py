@@ -25,6 +25,7 @@ class Database:
                     username TEXT PRIMARY KEY,
                     display_name TEXT,
                     is_online BOOLEAN DEFAULT 0,
+                    is_recordable BOOLEAN DEFAULT 0,
                     is_recording BOOLEAN DEFAULT 0,
                     viewers INTEGER DEFAULT 0,
                     thumbnail_path TEXT,
@@ -117,10 +118,25 @@ class Database:
                 ON recordings(username, created_at DESC)
             """)
 
+            # Additive migration for existing databases.
+            await self._ensure_column(db, "models", "is_recordable", "BOOLEAN DEFAULT 0")
+
             await db.commit()
             
         self._initialized = True
         logger.info("Base de données initialisée", db_path=str(self.db_path))
+
+    async def _ensure_column(self, db: aiosqlite.Connection, table: str, column: str, definition: str):
+        """Ensure a column exists for additive runtime migrations."""
+        cursor = await db.execute(f"PRAGMA table_info({table})")
+        rows = await cursor.fetchall()
+        existing = {row[1] for row in rows}
+
+        if column in existing:
+            return
+
+        await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+        logger.info("Database column added", table=table, column=column)
     
     async def add_or_update_model(
         self, 
@@ -161,6 +177,7 @@ class Database:
         self,
         username: str,
         is_online: bool,
+        is_recordable: Optional[bool] = None,
         viewers: int = 0,
         is_recording: bool = False,
         thumbnail_path: Optional[str] = None
@@ -178,6 +195,9 @@ class Database:
                 'last_check_at': now,
                 'updated_at': now
             }
+
+            if is_recordable is not None:
+                update_fields['is_recordable'] = bool(is_recordable)
             
             if thumbnail_path:
                 update_fields['thumbnail_path'] = thumbnail_path

@@ -3078,19 +3078,22 @@ button {
   width: 100%;
   height: 100%;
   background: rgba(0, 0, 0, 0.85);
-  z-index: 10000;
+  z-index: 20000;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 1rem;
 }
 
 .player-modal-content {
-  width: 98%;
+  width: min(98vw, 1800px);
   max-width: none;
   background: var(--bg-secondary);
   border-radius: 8px;
   overflow: hidden;
   box-shadow: var(--shadow-lg);
+  position: relative;
+  isolation: isolate;
 }
 
 .player-modal-header {
@@ -3100,6 +3103,9 @@ button {
   gap: 0.75rem;
   padding: 1rem 1.5rem;
   border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 4;
+  background: linear-gradient(180deg, rgba(17, 20, 50, 0.98) 0%, rgba(17, 20, 50, 0.9) 100%);
 }
 
 .player-modal-header h3 {
@@ -3120,25 +3126,63 @@ button {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 5;
+}
+
+.player-back-btn,
+.player-delete-btn {
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.1;
+  min-height: 36px;
+}
+
+.player-back-btn {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.player-delete-btn {
+  color: var(--danger-light);
+  border-color: rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.player-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.75);
+  color: #fff;
 }
 
 .player-close-btn {
-  background: none;
-  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border);
   color: var(--text-secondary);
-  font-size: 1.5rem;
+  font-size: 1.35rem;
   cursor: pointer;
-  padding: 0.25rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 8px;
+  min-height: 36px;
 }
 
 .player-close-btn:hover {
   color: var(--text-primary);
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .recording-video {
   width: 100%;
   max-height: calc(100vh - 100px);
   background: #000;
+  display: block;
+  position: relative;
+  z-index: 1;
+}
+
+body.player-modal-open {
+  overflow: hidden;
 }
 
 /* Settings - Blacklist Input Row */
@@ -3192,6 +3236,13 @@ button {
 
   .player-modal-header {
     flex-wrap: wrap;
+    padding: 0.75rem 1rem;
+  }
+
+  .player-modal-left-actions,
+  .player-modal-right-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .player-modal-header h3 {

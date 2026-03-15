@@ -579,14 +579,18 @@ class ChaturbateAPI:
             if hls_url:
                 return {
                     "is_online": True,
+                    "is_recordable": True,
                     "viewers": 0,
                     "hls_source": hls_url,
+                    "room_status": "",
                     "request_ok": True,
                 }
             return {
                 "is_online": False,
+                "is_recordable": False,
                 "viewers": 0,
                 "hls_source": None,
+                "room_status": "",
                 "request_ok": False,
             }
 
@@ -618,12 +622,15 @@ class ChaturbateAPI:
 
             room_status = data.get("room_status", "")
             is_online = bool(hls_source) or room_status in {"public", "away"}
+            is_recordable = bool(hls_source)
             viewers = data.get("num_users", data.get("num_viewers", 0))
 
             return {
                 "is_online": bool(is_online),
+                "is_recordable": bool(is_recordable),
                 "viewers": int(viewers or 0),
                 "hls_source": hls_source,
+                "room_status": room_status,
                 "request_ok": True,
             }
 
