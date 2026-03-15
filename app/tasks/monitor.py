@@ -40,6 +40,11 @@ try:
 except ValueError:
     MONITOR_OFFLINE_HLS_PROBE_SECONDS = 20
 
+try:
+    MONITOR_STARTUP_ZERO_BYTES_SECONDS = max(20, int(os.getenv("MONITOR_STARTUP_ZERO_BYTES_SECONDS", "35")))
+except ValueError:
+    MONITOR_STARTUP_ZERO_BYTES_SECONDS = 35
+
 async def check_model_status(
     session: aiohttp.ClientSession,
     username: str,
@@ -594,14 +599,19 @@ async def monitor_models_task(
                                         "path": record_path,
                                         "size": current_size,
                                         "updated_at": now,
+                                        "first_bytes_at": now if current_size > 0 else None,
                                         "log_size": current_log_size,
                                         "log_updated_at": now,
                                     }
                                 elif current_size > progress.get("size", -1):
+                                    first_bytes_at = progress.get("first_bytes_at")
+                                    if first_bytes_at is None:
+                                        first_bytes_at = now
                                     recording_progress[session_id] = {
                                         "path": record_path,
                                         "size": current_size,
                                         "updated_at": now,
+                                        "first_bytes_at": first_bytes_at,
                                         "log_size": current_log_size,
                                         "log_updated_at": now,
                                     }
@@ -617,17 +627,27 @@ async def monitor_models_task(
                                     # If ffmpeg keeps producing log output (e.g. transient 503 retry loop),
                                     # allow a longer grace period before forcing a restart.
                                     hard_restart_after = MONITOR_RECORDING_STALL_SECONDS * 3
+                                    startup_no_data = (
+                                        progress.get("first_bytes_at") is None
+                                        and progress.get("size", -1) <= 0
+                                        and current_size <= 0
+                                        and stalled_for >= MONITOR_STARTUP_ZERO_BYTES_SECONDS
+                                    )
                                     should_restart = (
+                                        startup_no_data
+                                        or
                                         (stalled_for >= MONITOR_RECORDING_STALL_SECONDS and log_idle_for >= MONITOR_RECORDING_STALL_SECONDS)
                                         or stalled_for >= hard_restart_after
                                     )
 
                                     if should_restart:
+                                        restart_reason = "startup_zero_bytes" if startup_no_data else "stalled"
                                         logger.warning(
                                             "Recording stalled, restarting session",
                                             task="monitor",
                                             username=username,
                                             session_id=session_id,
+                                            reason=restart_reason,
                                             stalled_for_seconds=f"{stalled_for:.0f}",
                                             log_idle_for_seconds=f"{log_idle_for:.0f}",
                                             file_size=current_size,
