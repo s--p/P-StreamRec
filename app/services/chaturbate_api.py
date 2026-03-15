@@ -622,8 +622,23 @@ class ChaturbateAPI:
                     hls_source = data[field]
                     break
 
-            room_status = data.get("room_status", "")
-            is_online = bool(hls_source) or room_status in {"public", "away"}
+            room_status = str(data.get("room_status", "") or "").strip().lower()
+            presence_online = room_status in {
+                "public",
+                "away",
+                "private",
+                "secret",
+                "ticket",
+                "password",
+                "spy",
+                "group",
+                "group_show",
+            }
+            # Keep presence robust for unforeseen room statuses that are not explicitly offline.
+            if not presence_online and room_status and room_status not in {"offline"}:
+                presence_online = True
+
+            is_online = bool(hls_source) or presence_online
             is_recordable = bool(hls_source)
             viewers = data.get("num_users", data.get("num_viewers", 0))
 

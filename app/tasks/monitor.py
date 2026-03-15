@@ -95,17 +95,27 @@ async def check_model_status(
                            num_users=data.get("num_users", 0))
                 
                 # Détection améliorée du statut en ligne
-                room_status = data.get("room_status", "")
+                room_status = str(data.get("room_status", "") or "").strip().lower()
                 hls_source = data.get("hls_source")
-                
-                # Un modèle est en ligne si :
-                # 1. Il a un flux HLS disponible OU
-                # 2. Le room_status est "public" OU
-                # 3. Le room_status est "away" (temporairement absent mais toujours en ligne)
-                is_online = (
-                    bool(hls_source) or 
-                    room_status in ["public", "away"]
-                )
+
+                presence_online = room_status in {
+                    "public",
+                    "away",
+                    "private",
+                    "secret",
+                    "ticket",
+                    "password",
+                    "spy",
+                    "group",
+                    "group_show",
+                }
+                if not presence_online and room_status and room_status != "offline":
+                    presence_online = True
+
+                # Presence and recordability are intentionally split:
+                # - is_online: model appears online (public/private/secret/etc.)
+                # - is_recordable: public HLS is currently available
+                is_online = bool(hls_source) or presence_online
                 
                 viewers = data.get("num_users", 0)
                 
@@ -552,6 +562,18 @@ async def monitor_models_task(
                                             error=str(e),
                                         )
 
+                                if not probe_hls:
+                                    try:
+                                        from ..resolvers.chaturbate import resolve_m3u8 as resolve_m3u8_sync
+                                        probe_hls = resolve_m3u8_sync(username)
+                                    except Exception as e:
+                                        logger.debug(
+                                            "Offline probe sync resolver failed",
+                                            task="monitor",
+                                            username=username,
+                                            error=str(e),
+                                        )
+
                                 if probe_hls:
                                     status["hls_source"] = probe_hls
                                     status["request_ok"] = True
@@ -690,6 +712,17 @@ async def monitor_models_task(
                                     except Exception as e:
                                         logger.debug(
                                             "Recovery edge HLS fetch failed",
+                                            username=username,
+                                            error=str(e),
+                                        )
+
+                                if not recovered_hls:
+                                    try:
+                                        from ..resolvers.chaturbate import resolve_m3u8 as resolve_m3u8_sync
+                                        recovered_hls = resolve_m3u8_sync(username)
+                                    except Exception as e:
+                                        logger.debug(
+                                            "Recovery sync resolver failed",
                                             username=username,
                                             error=str(e),
                                         )
