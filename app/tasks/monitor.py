@@ -101,8 +101,10 @@ async def check_model_status(
                 
                 return {
                     "is_online": is_online,
+                    "is_recordable": bool(hls_source),
                     "viewers": viewers,
                     "hls_source": hls_source,
+                    "room_status": room_status,
                     "request_ok": True,
                 }
     except Exception as e:
@@ -110,8 +112,10 @@ async def check_model_status(
     
     return {
         "is_online": False,
+        "is_recordable": False,
         "viewers": 0,
         "hls_source": None,
+        "room_status": "",
         "request_ok": False,
     }
 
@@ -472,6 +476,7 @@ async def monitor_models_task(
 
                         status_request_ok = bool(status.get('request_ok', True))
                         effective_online = bool(status.get('is_online', False))
+                        effective_recordable = bool(status.get('is_recordable', bool(status.get('hls_source'))))
                         previous_online = bool(model.get('is_online', False))
 
                         if status_request_ok:
@@ -578,6 +583,7 @@ async def monitor_models_task(
                             auto_record_enabled
                             and not is_recording
                             and effective_online
+                            and effective_recordable
                             and chaturbate_api
                         ):
                             now = time.time()
@@ -585,17 +591,18 @@ async def monitor_models_task(
 
                             if now - last_try >= restart_cooldown_seconds:
                                 restart_attempts[username] = now
-                                recovered_hls = None
+                                recovered_hls = status.get("hls_source")
 
-                                try:
-                                    from ..resolvers.chaturbate import resolve_m3u8_async
-                                    recovered_hls = await resolve_m3u8_async(username)
-                                except Exception as e:
-                                    logger.debug(
-                                        "Recovery async resolver failed",
-                                        username=username,
-                                        error=str(e),
-                                    )
+                                if not recovered_hls:
+                                    try:
+                                        from ..resolvers.chaturbate import resolve_m3u8_async
+                                        recovered_hls = await resolve_m3u8_async(username)
+                                    except Exception as e:
+                                        logger.debug(
+                                            "Recovery async resolver failed",
+                                            username=username,
+                                            error=str(e),
+                                        )
 
                                 if not recovered_hls:
                                     try:
@@ -683,6 +690,7 @@ async def monitor_models_task(
                         await db.update_model_status(
                             username=username,
                             is_online=effective_online,
+                            is_recordable=effective_recordable,
                             viewers=status['viewers'],
                             is_recording=is_recording,
                             thumbnail_path=thumbnail_path
@@ -694,6 +702,7 @@ async def monitor_models_task(
                         logger.debug("Model status updated",
                                    username=username,
                                    is_online=effective_online,
+                                   is_recordable=effective_recordable,
                                    request_ok=status_request_ok,
                                    is_recording=is_recording,
                                    viewers=status['viewers'])

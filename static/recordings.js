@@ -251,6 +251,7 @@ async function playRecording(username, filename, recordingId, index) {
 
   title.textContent = username + ' - ' + filename;
   modal.style.display = 'flex';
+  document.body.classList.add('player-modal-open');
 
   var playerBackBtn = document.getElementById('playerBackBtn');
   if (playerBackBtn) {
@@ -388,6 +389,7 @@ async function closePlayer(options) {
   if (interval) clearInterval(Number(interval));
 
   modal.style.display = 'none';
+  document.body.classList.remove('player-modal-open');
 
   // Auto-delete if threshold was reached
   if (!options.skipAutoDelete && shouldAutoDelete && currentPlayingUsername && currentPlayingFilename) {

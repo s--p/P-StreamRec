@@ -2127,19 +2127,48 @@ async def auto_record_task():
                 cached_status = await db.get_model(username)
                 
                 if cached_status and cached_status.get('is_online'):
+                    if not cached_status.get('is_recordable'):
+                        logger.debug(
+                            "Model online but stream not recordable yet",
+                            task="auto-record",
+                            username=username,
+                        )
+                        continue
+
                     # Modèle en ligne selon le cache, résoudre le flux HLS
                     try:
                         hls_source = None
 
-                        # Try async resolver first (uses authenticated API)
-                        try:
-                            from .resolvers.chaturbate import resolve_m3u8_async
-                            hls_source = await resolve_m3u8_async(username)
-                        except Exception:
-                            pass
+                        if chaturbate_api:
+                            try:
+                                live_status = await chaturbate_api.get_model_status(username)
+                                if not live_status.get('is_recordable') or not live_status.get('hls_source'):
+                                    logger.debug(
+                                        "Skipping start: stream not recordable",
+                                        task="auto-record",
+                                        username=username,
+                                        room_status=live_status.get('room_status'),
+                                    )
+                                    continue
+                                hls_source = live_status.get('hls_source')
+                            except Exception as e:
+                                logger.debug(
+                                    "Live status pre-check failed",
+                                    task="auto-record",
+                                    username=username,
+                                    error=str(e),
+                                )
 
-                        # Fallback to direct API
+                        # Try async resolver first (uses authenticated API)
                         if not hls_source:
+                            try:
+                                from .resolvers.chaturbate import resolve_m3u8_async
+                                hls_source = await resolve_m3u8_async(username)
+                            except Exception:
+                                pass
+
+                        # Fallback to direct API only when authenticated API client is unavailable.
+                        if not hls_source and not chaturbate_api:
                             api_url = f"https://chaturbate.com/api/chatvideocontext/{username}/"
                             headers = {
                                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
