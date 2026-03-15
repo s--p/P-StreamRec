@@ -41,9 +41,9 @@ except ValueError:
     MONITOR_OFFLINE_HLS_PROBE_SECONDS = 20
 
 try:
-    MONITOR_STARTUP_ZERO_BYTES_SECONDS = max(20, int(os.getenv("MONITOR_STARTUP_ZERO_BYTES_SECONDS", "35")))
+    MONITOR_STARTUP_ZERO_BYTES_SECONDS = max(10, int(os.getenv("MONITOR_STARTUP_ZERO_BYTES_SECONDS", "25")))
 except ValueError:
-    MONITOR_STARTUP_ZERO_BYTES_SECONDS = 35
+    MONITOR_STARTUP_ZERO_BYTES_SECONDS = 25
 
 async def check_model_status(
     session: aiohttp.ClientSession,
@@ -623,15 +623,15 @@ async def monitor_models_task(
 
                                     stalled_for = now - float(progress.get("updated_at", now))
                                     log_idle_for = now - float(progress.get("log_updated_at", now))
+                                    session_started_at = float(active_session.get("started_at_unix", now) or now)
+                                    session_age = max(0.0, now - session_started_at)
 
                                     # If ffmpeg keeps producing log output (e.g. transient 503 retry loop),
                                     # allow a longer grace period before forcing a restart.
                                     hard_restart_after = MONITOR_RECORDING_STALL_SECONDS * 3
                                     startup_no_data = (
-                                        progress.get("first_bytes_at") is None
-                                        and progress.get("size", -1) <= 0
                                         and current_size <= 0
-                                        and stalled_for >= MONITOR_STARTUP_ZERO_BYTES_SECONDS
+                                        and session_age >= MONITOR_STARTUP_ZERO_BYTES_SECONDS
                                     )
                                     should_restart = (
                                         startup_no_data
@@ -650,6 +650,7 @@ async def monitor_models_task(
                                             reason=restart_reason,
                                             stalled_for_seconds=f"{stalled_for:.0f}",
                                             log_idle_for_seconds=f"{log_idle_for:.0f}",
+                                            session_age_seconds=f"{session_age:.0f}",
                                             file_size=current_size,
                                         )
                                         manager.stop_session(session_id)
